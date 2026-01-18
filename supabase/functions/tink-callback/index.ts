@@ -60,17 +60,57 @@ serve(async (req) => {
     const authHeader = req.headers.get('Authorization') || ''
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_ANON_KEY') ?? '', { global: { headers: { Authorization: authHeader } } })
     const accounts = accParsed.json?.accounts ?? []
-    const rows = accounts.map((a: any) => ({
+    const accountRows = accounts.map((a: any) => ({
       id: a?.id ?? crypto.randomUUID(),
       provider: 'Tink',
       account_name: a?.name ?? 'Account',
       currency: a?.currencyCode ?? 'EUR'
     }))
-    if (rows.length > 0) {
-      await supabase.from('BankAccounts').insert(rows)
+    if (accountRows.length > 0) {
+      // Upsert to avoid duplicates on repeated callbacks
+      await supabase.from('BankAccounts').upsert(accountRows as any, { onConflict: 'id' })
     }
 
-    return new Response(JSON.stringify({ ok: true, accounts: rows.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    // Fetch transactions (first page)
+    const txRes = await fetch(TINK_TRANSACTIONS_URL, {
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'Accept': 'application/json' }
+    })
+    const txParsed = await parseJsonSafe(txRes)
+    if (!txRes.ok) {
+      return new Response(JSON.stringify({ ok: false, step: 'fetch_transactions', status: txRes.status, details: txParsed.text }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    const txs: any[] = txParsed.json?.transactions ?? []
+    const txRows = txs.map((t: any) => {
+      // Tink v2 transaction fields may vary; try common fields safely
+      const id = String(t?.id ?? crypto.randomUUID())
+      const accountId = String(t?.accountId ?? t?.account?.id ?? '')
+      const currency = String(t?.currencyCode ?? t?.amount?.currencyCode ?? 'EUR')
+      const rawAmount = Number(
+        (t?.amount && (t.amount.value ?? t.amount?.value?.unscaledValue)) ??
+        t?.amount?.value ?? t?.amount ?? 0
+      )
+      const description = String(
+        t?.descriptions?.display ?? t?.description ?? t?.merchantName ?? t?.originalText ?? ''
+      )
+      const booked = String(
+        t?.dates?.booked ?? t?.bookingDate ?? t?.date ?? new Date().toISOString().slice(0,10)
+      ).slice(0,10)
+      return {
+        id,
+        account_id: accountId,
+        amount: isFinite(rawAmount) ? rawAmount : 0,
+        currency,
+        description,
+        booked_at: booked,
+      }
+    }).filter((r: any) => r.id && r.account_id)
+
+    if (txRows.length > 0) {
+      await supabase.from('Transactions').upsert(txRows as any, { onConflict: 'id' })
+    }
+
+    return new Response(JSON.stringify({ ok: true, accounts: accountRows.length, transactions: txRows.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (error) {
     return new Response(JSON.stringify({ ok: false, error: String(error) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }

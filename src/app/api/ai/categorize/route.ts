@@ -17,14 +17,41 @@ Transactions:\n` + JSON.stringify(items)
 
 export async function POST() {
   try {
+    const supabase = await createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const userId = session?.user?.id
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 })
+    }
+
+    // Rate limiting: 5 categorizations per hour per user
+    const { checkRateLimit } = await import('@/lib/rate-limit')
+    const rateLimit = checkRateLimit(`ai-categorize:${userId}`, 5, 3600000)
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { 
+          ok: false, 
+          error: 'Rate limit exceeded. Please try again later.',
+          retryAfter: Math.ceil((rateLimit.resetAt - Date.now()) / 1000)
+        },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': String(Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
+            'X-RateLimit-Limit': '5',
+            'X-RateLimit-Remaining': String(rateLimit.remaining),
+            'X-RateLimit-Reset': String(rateLimit.resetAt),
+          }
+        }
+      )
+    }
+
     const openaiKey = process.env.OPENAI_API_KEY
     const geminiKey = process.env.GEMINI_API_KEY
     const provider = (process.env.AI_PROVIDER || (geminiKey ? 'gemini' : 'openai')).toLowerCase()
     if (provider === 'openai' && !openaiKey && !geminiKey) {
       return NextResponse.json({ ok: false, error: 'No AI key configured (OPENAI_API_KEY or GEMINI_API_KEY)' }, { status: 200 })
     }
-
-    const supabase = await createClient()
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 200 })
 
@@ -107,13 +134,43 @@ export async function POST() {
       .map(r => ({ id: r.id, category: r.category as string }))
 
     if (updates.length) {
+      // Before upserting categories, compute sign adjustment based on category type
+      const { data: cats } = await supabase.from('Categories').select('name,type,user_id').or(`user_id.eq.${userId},user_id.is.null`)
+      const typeByName = new Map<string, string>()
+      for (const c of cats || []) {
+        const key = String((c as any).name || '').toLowerCase()
+        if (!typeByName.has(key) || (c as any).user_id) typeByName.set(key, String((c as any).type || ''))
+      }
+
+      // Fetch amounts for the affected transactions to adjust signs
+      const ids = updates.map(u => u.id)
+      const { data: existing } = await supabase.from('Transactions').select('id, amount, description').in('id', ids)
+      const amtById = new Map<string, { amount: number; isRefund: boolean }>()
+      for (const t of existing || []) {
+        const desc = String((t as any).description || '')
+        amtById.set(String((t as any).id), { amount: Number((t as any).amount || 0), isRefund: /refund/i.test(desc) })
+      }
+
+      const categoryUpdates = updates.map(u => ({ id: u.id, category: u.category }))
+      const amountUpdates = updates.map(u => {
+        const k = String(u.category || '').toLowerCase()
+        const typ = String(typeByName.get(k) || '')
+        const base = amtById.get(u.id)
+        if (!base) return null
+        const desired = (typ.toLowerCase() === 'income' || base.isRefund || k === 'income') ? Math.abs(base.amount) : -Math.abs(base.amount)
+        if (desired === base.amount) return null
+        return { id: u.id, amount: desired }
+      }).filter(Boolean) as Array<{ id: string; amount: number }>
+
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
       if (serviceKey) {
         const admin = createAdminClient(url, serviceKey)
-        await admin.from('Transactions').upsert(updates, { onConflict: 'id' })
+        await admin.from('Transactions').upsert(categoryUpdates, { onConflict: 'id' })
+        if (amountUpdates.length) await admin.from('Transactions').upsert(amountUpdates, { onConflict: 'id' })
       } else {
-        await supabase.from('Transactions').upsert(updates, { onConflict: 'id' })
+        await supabase.from('Transactions').upsert(categoryUpdates, { onConflict: 'id' })
+        if (amountUpdates.length) await supabase.from('Transactions').upsert(amountUpdates, { onConflict: 'id' })
       }
     }
 

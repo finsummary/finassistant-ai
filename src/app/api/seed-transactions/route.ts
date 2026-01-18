@@ -8,9 +8,15 @@ function getRandomInt(min: number, max: number) {
 async function seed() {
   try {
     const supabase = await createClient()
+    const { data: { session } } = await supabase.auth.getSession()
+    const userId = session?.user?.id
+    if (!userId) return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 })
 
-    // Fetch accounts
-    const { data: accounts, error: accErr } = await supabase.from('BankAccounts').select('*')
+    // Fetch accounts for this user
+    const { data: accounts, error: accErr } = await supabase
+      .from('BankAccounts')
+      .select('*')
+      .eq('user_id', userId)
     if (accErr) return NextResponse.json({ ok: false, error: accErr.message }, { status: 200 })
 
     let totalInserted = 0
@@ -20,6 +26,7 @@ async function seed() {
         .from('Transactions')
         .select('id', { count: 'exact', head: true })
         .eq('account_id', acc.id)
+        .eq('user_id', userId)
 
       if ((count ?? 0) > 0) continue
 
@@ -35,6 +42,7 @@ async function seed() {
           currency: acc.currency || 'EUR',
           description: amount < 0 ? 'Card purchase' : 'Incoming transfer',
           booked_at: d.toISOString().slice(0, 10),
+          user_id: userId,
         }
       })
 

@@ -54,7 +54,18 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Host-based routing: app subdomain root -> app (login/dashboard)
+  const host = (request.headers.get('host') || '').toLowerCase()
+  const hostnameOnly = host.split(':')[0]
+  const isAppSubdomain = hostnameOnly.startsWith('app.')
+
+  if (isAppSubdomain && (request.nextUrl.pathname === '/' || request.nextUrl.pathname === '')) {
+    const target = user ? '/dashboard' : '/login'
+    const url = new URL(target, request.url)
+    return NextResponse.redirect(url)
+  }
 
   return response
 }

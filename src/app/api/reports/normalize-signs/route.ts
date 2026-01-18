@@ -21,14 +21,32 @@ async function handle(req: Request) {
 
     let pos = 0, neg = 0
     const updates: Array<{ id: string; amount: number }> = []
+
+    // Build category type map (user overrides global)
+    const userId = session.user.id
+    const { data: cats } = await supabase
+      .from('Categories')
+      .select('name,type,user_id')
+      .or(`user_id.eq.${userId},user_id.is.null`)
+    const byName = new Map<string, { type: string; userOwned: boolean }>()
+    for (const c of cats || []) {
+      const key = String((c as any).name || '').toLowerCase()
+      const isUser = !!(c as any).user_id
+      const prev = byName.get(key)
+      if (!prev || (isUser && !prev.userOwned)) {
+        byName.set(key, { type: String((c as any).type || ''), userOwned: isUser })
+      }
+    }
+
     for (const r of rows || []) {
       const desc = String((r as any).description || '')
       const isRefund = /refund/i.test(desc)
-      const cat = String((r as any).category || '')
-      const isIncome = cat.toLowerCase() === 'income'
+      const catName = String((r as any).category || '')
+      const catType = byName.get(catName.toLowerCase())?.type?.toLowerCase()
+      const isIncomeType = catType === 'income'
       let amt = Number((r as any).amount || 0)
       if (amt >= 0) pos++; else neg++
-      const desired = (isIncome || isRefund) ? Math.abs(amt) : -Math.abs(amt)
+      const desired = (isIncomeType || isRefund || catName.toLowerCase() === 'income') ? Math.abs(amt) : -Math.abs(amt)
       if (amt !== desired) updates.push({ id: (r as any).id, amount: desired })
     }
 

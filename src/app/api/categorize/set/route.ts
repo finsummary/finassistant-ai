@@ -27,7 +27,21 @@ export async function POST(req: Request) {
     const desc = String(tx?.description || '')
     const isRefund = /refund/i.test(desc)
     const oldAmt = Number(tx?.amount ?? 0)
-    const desiredAmt = (category.toLowerCase() === 'income' || isRefund) ? Math.abs(oldAmt) : -Math.abs(oldAmt)
+
+    // Determine category type from Categories (prefer user-defined, fallback to global)
+    let isIncomeType = false
+    {
+      const { data: catRow } = await supabase
+        .from('Categories')
+        .select('type')
+        .ilike('name', category)
+        .order('user_id', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      isIncomeType = String(catRow?.type || '').toLowerCase() === 'income'
+    }
+
+    const desiredAmt = (isIncomeType || isRefund) ? Math.abs(oldAmt) : -Math.abs(oldAmt)
     if (!Number.isNaN(desiredAmt) && desiredAmt !== oldAmt) {
       if (serviceKey) {
         const admin = createAdminClient(url, serviceKey)

@@ -4,8 +4,10 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { LoadingSpinner } from '@/components/ui/loading';
+import { useToast } from '@/components/ui/toast';
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 
 type Transaction = {
     id: string
@@ -18,6 +20,7 @@ type Transaction = {
 
 export default function Dashboard({ user }: { user?: any }) {
     const supabase = createClient();
+    const { addToast } = useToast();
     const [isLoading, setIsLoading] = useState(false);
     const [linkedAccounts, setLinkedAccounts] = useState<any[]>([]);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -26,8 +29,15 @@ export default function Dashboard({ user }: { user?: any }) {
     const [search, setSearch] = useState('')
     const [expanded, setExpanded] = useState<Record<string, boolean>>({});
     const [categories, setCategories] = useState<any[]>([]);
+    const [csvFile, setCsvFile] = useState<File | null>(null)
+    const [importAccountId, setImportAccountId] = useState<string>('')
+    const [importCurrency, setImportCurrency] = useState<string>('GBP')
+    const [invertSign, setInvertSign] = useState<boolean>(false)
+    const [organization, setOrganization] = useState<any>(null)
+    const [isCategorizing, setIsCategorizing] = useState(false)
+    const [isAutoCategorizing, setIsAutoCategorizing] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement | null>(null)
     
-    const searchParams = useSearchParams();
     const router = useRouter();
 
     useEffect(() => {
@@ -49,57 +59,25 @@ export default function Dashboard({ user }: { user?: any }) {
             } catch {}
         };
 
-        const handleCallback = async () => {
-            const code = searchParams.get('code');
-            if (code) {
-                setIsLoading(true);
-                try {
-                    const resp = await fetch('/api/tink-callback', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code })
-                    })
-                    const data = await resp.json()
-                    const error = data?.ok === false ? new Error(data?.error || data?.details || 'Callback failed') : null
-                    if (error) throw error;
-                    await fetchAccounts();
-                    await fetchTransactions();
-                    await fetchCategories();
-                    router.replace('/dashboard');
-                } catch (e: any) {
-                    alert(`Error processing Tink callback: ${e.message}`);
-                } finally {
-                    setIsLoading(false);
-                }
-            }
+        const fetchOrganization = async () => {
+            try {
+                const res = await fetch('/api/organizations', { cache: 'no-store' })
+                const json = await res.json()
+                if (json?.ok) setOrganization(json.data)
+            } catch {}
         };
 
         fetchAccounts();
         fetchTransactions();
         fetchCategories();
-        handleCallback();
-    }, [searchParams, supabase, router]);
+        fetchOrganization();
+    }, [supabase, router]);
 
-    const handleConnectBank = async () => {
-        setIsLoading(true);
-        try {
-            const resp = await fetch('/api/tink-connect', { method: 'POST' })
-            const data = await resp.json()
-            if (data?.link) {
-                window.location.href = data.link
-                return; // прервём, страница уйдёт на редирект
-            } else if (data?.ok === false) {
-                console.error('tink-connect error:', data)
-                alert(`Error: ${data.error || data.details || 'Failed to create Tink session'}`)
-            } else {
-                alert('Error: Failed to create Tink session')
-            }
-        } catch (error: any) {
-            alert(`Error: ${error.message}`);
-        } finally {
-            setIsLoading(false);
+    useEffect(() => {
+        if (linkedAccounts.length > 0 && !importAccountId) {
+            setImportAccountId(String(linkedAccounts[0].id))
         }
-    };
+    }, [linkedAccounts, importAccountId])
 
     const toggleExpanded = (accountId: string) => {
         setExpanded(prev => ({ ...prev, [accountId]: !prev[accountId] }))
@@ -148,16 +126,164 @@ export default function Dashboard({ user }: { user?: any }) {
         URL.revokeObjectURL(url)
     }
 
+    const parseCSVLine = (line: string, delimiter: string): string[] => {
+        const out: string[] = []
+        let cur = ''
+        let inQuotes = false
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i]
+            if (ch === '"') {
+                if (inQuotes && line[i+1] === '"') { cur += '"'; i++; continue }
+                inQuotes = !inQuotes
+                continue
+            }
+            if (!inQuotes && ch === delimiter) { out.push(cur); cur = ''; continue }
+            cur += ch
+        }
+        out.push(cur)
+        return out.map(s => s.trim())
+    }
+
+    const handleImportCsv = async () => {
+        if (!csvFile) { addToast('Choose a CSV file', 'error'); return }
+        if (!importAccountId) { addToast('Select account', 'error'); return }
+        
+        // Validate file type
+        if (!csvFile.name.toLowerCase().endsWith('.csv')) {
+            addToast('Please select a CSV file', 'error')
+            return
+        }
+        
+        // Validate file size (max 10MB)
+        if (csvFile.size > 10 * 1024 * 1024) {
+            addToast('File size must be less than 10MB', 'error')
+            return
+        }
+        
+        const text = await csvFile.text()
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0)
+        if (lines.length < 2) { addToast('CSV file is empty or has no data rows', 'error'); return }
+        const headerRaw = lines[0].replace(/^\uFEFF/, '')
+        const delim = (headerRaw.split(';').length > headerRaw.split(',').length) ? ';' : ','
+        const rawHeaders = parseCSVLine(headerRaw, delim)
+        const normalizeHeader = (s: string) => {
+            const trimmed = String(s || '').trim().toLowerCase()
+            const noParens = trimmed.replace(/\([^)]*\)/g, '')
+            const onlyLetters = noParens.replace(/[^a-z0-9\s]/g, ' ')
+            return onlyLetters.replace(/\s+/g, ' ').trim()
+        }
+        const header = rawHeaders.map(normalizeHeader)
+        const findIdx = (cands: string[]) => header.findIndex(h => cands.includes(h))
+        const idxDate = findIdx(['date','booking date','booked at','transaction date','posted date'])
+        const idxDesc = (() => {
+            const i1 = findIdx(['transaction description','description','details','narrative','merchant','name'])
+            if (i1 >= 0) return i1
+            const i2 = findIdx(['reference'])
+            return i2
+        })()
+        const idxAmt = findIdx(['amount','amt','value'])
+        const idxPaidIn  = findIdx(['paid in','money in','credit','credit amount'])
+        const idxPaidOut = findIdx(['paid out','money out','debit','debit amount'])
+        const idxCurr = findIdx(['currency','curr','transaction currency'])
+        const idxStatus = findIdx(['status'])
+        if (idxDate < 0 || (idxAmt < 0 && (idxPaidIn < 0 && idxPaidOut < 0))) {
+            addToast('CSV must include Date and either Amount or Paid in/Paid out columns', 'error')
+            return
+        }
+        const items: any[] = []
+        for (let i = 1; i < lines.length; i++) {
+            const cols = parseCSVLine(lines[i], delim)
+            if (!cols || cols.length < rawHeaders.length) continue
+            if (idxStatus >= 0) {
+                const statusVal = String(cols[idxStatus] || '').trim().toLowerCase()
+                if (statusVal === 'cancelled') continue
+            }
+            let dateRaw = String(idxDate >= 0 ? (cols[idxDate] || '') : '')
+            dateRaw = dateRaw.replace(/^\uFEFF/, '').trim()
+            const date = /^\d{4}-\d{2}-\d{2}\b/.test(dateRaw) ? dateRaw.slice(0,10) : dateRaw
+            let description = idxDesc >= 0 ? String(cols[idxDesc] || '') : ''
+            const idxRef = findIdx(['reference'])
+            if ((!description || description.trim().length < 2) && idxRef >= 0) {
+                description = String(cols[idxRef] || '')
+            } else if (idxRef >= 0) {
+                const refVal = String(cols[idxRef] || '').trim()
+                if (refVal) description = `${description} | ${refVal}`
+            }
+            const parseAmountSmart = (raw: any): number | null => {
+                const s = String(raw ?? '').replace(/[^0-9.,\-]/g, '').trim()
+                if (!s) return null
+                const normalized = /,\d{1,2}$/.test(s) ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '')
+                const n = Number(normalized)
+                return isFinite(n) ? n : null
+            }
+            let amount: number | null = null
+            if (idxAmt >= 0) {
+                amount = parseAmountSmart(cols[idxAmt])
+            } else {
+                const inVal  = idxPaidIn  >= 0 ? (parseAmountSmart(cols[idxPaidIn])  || 0) : 0
+                const outVal = idxPaidOut >= 0 ? (parseAmountSmart(cols[idxPaidOut]) || 0) : 0
+                if (inVal || outVal) amount = inVal - outVal
+            }
+            if (amount === null) continue
+            const currency = (idxCurr >= 0 ? (cols[idxCurr] || '') : importCurrency).toUpperCase()
+            const finalAmount = invertSign ? (amount > 0 ? -Math.abs(amount) : Math.abs(amount)) : amount
+            items.push({ date, description, amount: finalAmount, currency, account_id: importAccountId })
+        }
+        if (!items.length) { addToast('No valid rows found', 'error'); return }
+        setIsLoading(true)
+        try {
+            const res = await fetch('/api/transactions/import', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ items, defaultCurrency: importCurrency, invertSign })
+            })
+            const json = await res.json()
+            if (!json?.ok) { addToast(`Import error: ${json?.error || json?.details}`, 'error'); return }
+            const { data: txs } = await supabase.from('Transactions').select('*')
+            if (txs) setTransactions((txs || []) as Transaction[])
+            addToast(`Imported ${json.imported} of ${json.received} rows`, 'success')
+            setCsvFile(null)
+            if (fileInputRef.current) fileInputRef.current.value = ''
+        } catch (e: any) {
+            addToast(`Import failed: ${e.message}`, 'error')
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
     return (
         <div className="p-4 md:p-8">
             <div className="mb-4 flex items-center justify-between">
                 <h1 className="text-2xl font-bold">Dashboard</h1>
                 <div className="flex gap-2">
+                    <Button variant="default" onClick={() => { window.location.href = '/framework' }}>Framework</Button>
+                    <Button variant="outline" onClick={() => { window.location.href = '/settings/planned-items' }}>Planned Items</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/reports' }}>Reports</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/settings/categories' }}>Categories</Button>
+                    <Button variant="outline" onClick={() => { window.location.href = '/settings/organization' }}>Settings</Button>
                 </div>
             </div>
-            <p className="mb-4 text-muted-foreground">{`Welcome${user?.email ? `, ${user.email}` : ''}`}</p>
+            <div className="mb-4">
+                <p className="text-muted-foreground">{`Welcome${user?.email ? `, ${user.email}` : ''}`}</p>
+                {organization && (
+                    <p className="text-sm text-muted-foreground">
+                        {organization.business_name}{organization.country ? ` • ${organization.country}` : ''}
+                    </p>
+                )}
+                {!organization && (
+                    <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                        <p className="text-sm text-yellow-800">
+                            Please set up your organization in{' '}
+                            <button
+                                onClick={() => { window.location.href = '/settings/organization' }}
+                                className="underline font-medium"
+                            >
+                                Settings
+                            </button>
+                            {' '}to get started.
+                        </p>
+                    </div>
+                )}
+            </div>
 
             <div className="mb-6 flex gap-2 items-center flex-wrap">
                 <Button variant={period === 'all' ? 'default' : 'outline'} onClick={() => setPeriod('all')}>All</Button>
@@ -171,8 +297,8 @@ export default function Dashboard({ user }: { user?: any }) {
             <div className="space-y-8">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Connected Bank Accounts</CardTitle>
-                        <CardDescription>Connect with Tink (sandbox) to see demo accounts.</CardDescription>
+                        <CardTitle>Bank Accounts</CardTitle>
+                        <CardDescription>Manage your bank accounts and transactions from CSV uploads.</CardDescription>
                     </CardHeader>
                     <CardContent>
                         {linkedAccounts.length > 0 ? (
@@ -216,10 +342,10 @@ export default function Dashboard({ user }: { user?: any }) {
                                                             setExpanded(prev => ({ ...prev, [acc.id]: false }))
                                                         } else {
                                                             console.error('delete-account error:', result)
-                                                            alert(`Delete failed: ${result?.error || 'Unknown error'}`)
+                                                            addToast(`Delete failed: ${result?.error || 'Unknown error'}`, 'error')
                                                         }
                                                     } catch (e: any) {
-                                                        alert(`Delete failed: ${e.message}`)
+                                                        addToast(`Delete failed: ${e.message}`, 'error')
                                                     } finally {
                                                         setDeleting(prev => ({ ...prev, [acc.id]: false }))
                                                     }
@@ -251,7 +377,7 @@ export default function Dashboard({ user }: { user?: any }) {
                                                                                     try {
                                                                                         const res = await fetch('/api/categorize/set', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ id: tx.id, category: newCat }) })
                                                                                         const data = await res.json()
-                                                                                        if (!data?.ok) { alert(`Set category error: ${data?.error}`); return }
+                                                                                        if (!data?.ok) { addToast(`Set category error: ${data?.error}`, 'error'); return }
                                                                                         // локально обновим и знак суммы для мгновенного UI
                                                                                         const desc = String(tx.description || '')
                                                                                         const isRefund = /refund/i.test(desc)
@@ -260,7 +386,7 @@ export default function Dashboard({ user }: { user?: any }) {
                                                                                         const isIncomeType = String(catRow?.type).toLowerCase() === 'income' || String(newCat).toLowerCase() === 'income'
                                                                                         const desiredAmt = (isIncomeType || isRefund) ? Math.abs(oldAmt) : -Math.abs(oldAmt)
                                                                                         setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, category: newCat, amount: desiredAmt } : t))
-                                                                                    } catch (err:any) { alert(`Set category error: ${err.message}`) }
+                                                                                    } catch (err:any) { addToast(`Set category error: ${err.message}`, 'error') }
                                                                                 }}
                                                                             >
                                                                                 <option value="">Uncategorized</option>
@@ -278,7 +404,10 @@ export default function Dashboard({ user }: { user?: any }) {
                                                             </tbody>
                                                         </table>
                                                     ) : (
-                                                        <p className="text-sm text-muted-foreground">No transactions for selected period.</p>
+                                                        <div className="text-center py-6">
+                                                            <p className="text-muted-foreground mb-2">No transactions for selected period.</p>
+                                                            <p className="text-sm text-muted-foreground">Upload a CSV file to import your transactions.</p>
+                                                        </div>
                                                     )}
                                                 </div>
                                             )}
@@ -287,103 +416,155 @@ export default function Dashboard({ user }: { user?: any }) {
                                 })}
                             </ul>
                         ) : (
-                            <p className="text-sm text-muted-foreground">No bank accounts connected yet.</p>
+                            <div className="text-center py-6">
+                                <p className="text-muted-foreground mb-2">No bank accounts connected yet.</p>
+                                <p className="text-sm text-muted-foreground mb-4">Create a manual account below to start importing transactions.</p>
+                            </div>
                         )}
                         <div className="mt-4 flex gap-2">
                             <Button variant="outline" onClick={async ()=>{
+                                setIsCategorizing(true)
                                 try {
                                     const res = await fetch('/api/ai/categorize', { method:'POST' })
                                     const data = await res.json()
-                                    if (!data?.ok) { alert(`AI categorize error: ${data?.error || data?.details}`); return }
+                                    if (!data?.ok) { addToast(`AI categorize error: ${data?.error || data?.details}`, 'error'); return }
                                     const { data: txs } = await supabase.from('Transactions').select('*')
                                     if (txs) setTransactions((txs || []) as Transaction[])
-                                    alert(`AI categorized: ${data.updated} transactions`)
+                                    addToast(`AI categorized: ${data.updated} transactions`, 'success')
                                 } catch (e:any) {
-                                    alert(`AI categorize error: ${e.message}`)
+                                    addToast(`AI categorize error: ${e.message}`, 'error')
+                                } finally {
+                                    setIsCategorizing(false)
                                 }
-                            }}>AI Categorize</Button>
+                            }} disabled={isCategorizing}>
+                              {isCategorizing ? (
+                                <>
+                                  <LoadingSpinner size="sm" className="mr-2" />
+                                  Categorizing...
+                                </>
+                              ) : (
+                                'AI Categorize'
+                              )}
+                            </Button>
                             <Button variant="outline" onClick={async ()=>{
+                                setIsAutoCategorizing(true)
                                 try {
                                     const res = await fetch('/api/categorize/apply', { method:'POST' })
                                     const data = await res.json()
-                                    if (!data?.ok) { alert(`Auto-categorize error: ${data?.error || data?.details}`); return }
+                                    if (!data?.ok) { addToast(`Auto-categorize error: ${data?.error || data?.details}`, 'error'); return }
                                     const { data: txs } = await supabase.from('Transactions').select('*')
                                     if (txs) setTransactions((txs || []) as Transaction[])
-                                    alert(`Auto-categorized: ${data.updated} transactions`)
+                                    addToast(`Auto-categorized: ${data.updated} transactions`, 'success')
                                 } catch (e:any) {
-                                    alert(`Auto-categorize error: ${e.message}`)
+                                    addToast(`Auto-categorize error: ${e.message}`, 'error')
+                                } finally {
+                                    setIsAutoCategorizing(false)
                                 }
-                            }}>Auto-categorize (Rules)</Button>
+                            }} disabled={isAutoCategorizing}>
+                              {isAutoCategorizing ? (
+                                <>
+                                  <LoadingSpinner size="sm" className="mr-2" />
+                                  Categorizing...
+                                </>
+                              ) : (
+                                'Auto-categorize (Rules)'
+                              )}
+                            </Button>
                         </div>
-                        <div className="mt-4 flex gap-2 flex-wrap">
-                            {linkedAccounts.length === 0 && (
-                                <Button onClick={handleConnectBank} disabled={isLoading}>
-                                    {isLoading ? 'Processing...' : 'Connect Bank Account (Tink Sandbox)'}
-                                </Button>
-                            )}
-                            <Button variant="outline" disabled={isLoading} onClick={async () => {
-                                try {
-                                    const res = await fetch('/api/plaid/link-token', { method: 'POST' })
-                                    const data = await res.json()
-                                    if (!data?.link_token) {
-                                        alert(`Plaid error: ${data?.error || data?.details || 'Failed to create link token'}`)
-                                        return
-                                    }
-                                    const ensureScript = () => new Promise<void>((resolve, reject) => {
-                                        if ((window as any).Plaid) return resolve()
-                                        const s = document.createElement('script')
-                                        s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js'
-                                        s.onload = () => resolve()
-                                        s.onerror = () => reject(new Error('Failed to load Plaid Link script'))
-                                        document.body.appendChild(s)
-                                    })
-                                    await ensureScript()
-                                    const handler = (window as any).Plaid.create({
-                                        token: data.link_token,
-                                        onSuccess: async (public_token: string) => {
-                                            try {
-                                                const exRes = await fetch('/api/plaid/exchange', {
-                                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify({ public_token })
-                                                })
-                                                const exData = await exRes.json()
-                                                if (!exData?.ok) {
-                                                    alert(`Plaid exchange error: ${exData?.error || exData?.details || 'Failed to exchange'}`)
-                                                    return
-                                                }
-                                                const { data: accs } = await supabase.from('BankAccounts').select('*')
-                                                if (accs) setLinkedAccounts(accs as any)
-                                                const { data: txs } = await supabase.from('Transactions').select('*')
-                                                if (txs) setTransactions((txs || []) as Transaction[])
-                                                alert(`Plaid imported: ${exData.accounts} accounts, ${exData.transactions} transactions`)
-                                            } catch (e: any) {
-                                                alert(`Plaid exchange error: ${e.message}`)
-                                            }
-                                        },
-                                        onExit: () => {},
-                                    })
-                                    handler.open()
-                                } catch (e: any) {
-                                    alert(`Plaid error: ${e.message}`)
-                                }
-                                }}>Connect via Plaid (Sandbox)</Button>
-                            {linkedAccounts.length > 0 && (
-                                <Button variant="outline" onClick={async ()=>{
+                        <div className="mt-6 border-t pt-4">
+                            <div className="text-sm font-medium mb-2">Add manual account</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Input
+                                    placeholder="Account name"
+                                    className="w-64"
+                                    onKeyDown={e => { if (e.key === 'Enter') (document.getElementById('btn-add-account') as HTMLButtonElement)?.click() }}
+                                    id="manual-account-name"
+                                />
+                                <Input
+                                    placeholder="Currency"
+                                    className="w-28"
+                                    defaultValue={importCurrency}
+                                    onKeyDown={e => { if (e.key === 'Enter') (document.getElementById('btn-add-account') as HTMLButtonElement)?.click() }}
+                                    id="manual-account-currency"
+                                />
+                                <Button id="btn-add-account" variant="outline" disabled={isLoading} onClick={async ()=>{
                                     try {
-                                        const res = await fetch('/api/plaid/refresh', { method: 'POST' })
-                                        const data = await res.json()
-                                        if (!data?.ok) {
-                                            alert(`Refresh error: ${data?.error || data?.details || 'Failed to refresh'}`)
-                                            return
+                                        const nameEl = document.getElementById('manual-account-name') as HTMLInputElement
+                                        const currEl = document.getElementById('manual-account-currency') as HTMLInputElement
+                                        const name = String(nameEl?.value || '').trim()
+                                        const curr = String(currEl?.value || '').trim().toUpperCase()
+                                        if (!name || !curr) { addToast('Enter account name and currency', 'error'); return }
+                                        setIsLoading(true)
+                                        const res = await fetch('/api/accounts/create', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ name, currency: curr })
+                                        })
+                                        const json = await res.json()
+                                        if (!json?.ok) { addToast(`Create account error: ${json?.error || 'Unknown error'}`, 'error'); return }
+                                        const account = json.account
+                                        const { data: accs } = await supabase.from('BankAccounts').select('*')
+                                        if (accs) setLinkedAccounts(accs as any)
+                                        if (account?.id) {
+                                            setImportAccountId(String(account.id))
                                         }
-                                        const { data: txs } = await supabase.from('Transactions').select('*')
-                                        if (txs) setTransactions((txs || []) as Transaction[])
-                                        alert(`Refreshed: ${data.transactions} new/updated transactions`)
+                                        nameEl.value = ''
+                                        currEl.value = curr
+                                        addToast('Account created', 'success')
                                     } catch (e:any) {
-                                        alert(`Refresh error: ${e.message}`)
+                                        addToast(`Create account error: ${e.message}`, 'error')
+                                    } finally {
+                                        setIsLoading(false)
                                     }
-                                }}>Refresh data</Button>
-                            )}
+                                }}>
+                                  {isLoading ? (
+                                    <>
+                                      <LoadingSpinner size="sm" className="mr-2" />
+                                      Adding...
+                                    </>
+                                  ) : (
+                                    'Add'
+                                  )}
+                                </Button>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Import CSV</CardTitle>
+                        <CardDescription>Upload transactions from a CSV file. Required headers: Date, Amount. Optional: Description, Currency.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="flex flex-col gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <Input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} className="max-w-md" />
+                                <select className="h-9 px-2 border rounded" value={importAccountId} onChange={e => setImportAccountId(e.target.value)}>
+                                    <option value="">Select account</option>
+                                    {linkedAccounts.map((a: any) => (
+                                        <option key={a.id} value={a.id}>{a.account_name} ({a.currency})</option>
+                                    ))}
+                                </select>
+                                <Input className="w-28" placeholder="Currency" value={importCurrency} onChange={e => setImportCurrency(e.target.value.toUpperCase())} />
+                                <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <input type="checkbox" checked={invertSign} onChange={e => setInvertSign(e.target.checked)} />
+                                    Invert sign
+                                </label>
+                                <Button onClick={handleImportCsv} disabled={isLoading || !csvFile || !importAccountId}>
+                                  {isLoading ? (
+                                    <>
+                                      <LoadingSpinner size="sm" className="mr-2" />
+                                      Importing...
+                                    </>
+                                  ) : (
+                                    'Import'
+                                  )}
+                                </Button>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                                Example headers: <code>date,description,amount,currency</code>. Amount decimals: dot or comma. Dates like <code>2025-10-31</code> or <code>31/10/2025</code>.
+                            </div>
                         </div>
                     </CardContent>
                 </Card>
