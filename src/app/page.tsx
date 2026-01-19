@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -10,6 +12,19 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const supabase = createClient();
+
+  // Check if user is authenticated and redirect
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.push('/dashboard');
+      }
+    };
+    checkAuth();
+  }, [router, supabase]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,13 +50,35 @@ export default function Home() {
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="max-w-2xl w-full">
+      <div className="max-w-2xl w-full space-y-4">
         <Card>
           <CardHeader>
             <CardTitle className="text-3xl">FinAssistant</CardTitle>
             <CardDescription>
-              We are building a simple Financial Assistant to help track, understand, and plan your finances.
-              Join the waitlist to get early access.
+              Cash-first financial clarity and decision support for solopreneurs and small business owners.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex flex-col gap-3">
+              <Button 
+                onClick={() => router.push('/login')} 
+                className="w-full"
+                size="lg"
+              >
+                Get Started - Login
+              </Button>
+              <p className="text-sm text-muted-foreground text-center">
+                Already have an account? <button onClick={() => router.push('/login')} className="underline">Sign in</button>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Join Waitlist</CardTitle>
+            <CardDescription>
+              Get notified when we launch new features
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -53,7 +90,7 @@ export default function Home() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              <Button type="submit" disabled={loading}>
+              <Button type="submit" disabled={loading} variant="outline">
                 {loading ? 'Submitting…' : 'Join waitlist'}
               </Button>
             </form>

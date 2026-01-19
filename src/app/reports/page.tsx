@@ -252,11 +252,11 @@ export default function ReportsPage() {
     // Row 0: Cash at start
     const startRow = { key: 'cash_start', label: 'Cash at start', values: [] as number[] }
     // Income category rows
-    const incRows = incomeNames.map(name => ({ key: `inc_${name}`, label: name, values: [] as number[] }))
+    const incRows = incomeNames.map((name, idx) => ({ key: `inc_${name}_${idx}`, label: name, values: [] as number[] }))
     // Total income row
     const totalInc = { key: 'total_income', label: 'Total income', values: [] as number[] }
     // Expense category rows
-    const expRows = expenseNames.map(name => ({ key: `exp_${name}`, label: name, values: [] as number[] }))
+    const expRows = expenseNames.map((name, idx) => ({ key: `exp_${name}_${idx}`, label: name, values: [] as number[] }))
     // Total expenses row
     const totalExp = { key: 'total_expenses', label: 'Total expenses', values: [] as number[] }
     // Cash at end row
@@ -359,8 +359,8 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {incomeCats.map(c => (
-                      <tr key={c.category} className="border-t">
+                    {incomeCats.map((c, idx) => (
+                      <tr key={`income-${c.category}-${idx}`} className="border-t">
                         <td className="py-2 pr-4 whitespace-nowrap">{c.category}</td>
                         <td className="py-2 pr-4">{format(c.income)}</td>
                       </tr>
@@ -387,8 +387,8 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {expenseCats.map(c => (
-                      <tr key={c.category} className="border-t">
+                    {expenseCats.map((c, idx) => (
+                      <tr key={`expense-${c.category}-${idx}`} className="border-t">
                         <td className="py-2 pr-4 whitespace-nowrap">{c.category}</td>
                         <td className="py-2 pr-4">{format(Math.abs(c.expenses))}</td>
                       </tr>

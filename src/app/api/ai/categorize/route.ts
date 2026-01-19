@@ -52,15 +52,57 @@ export async function POST() {
     if (provider === 'openai' && !openaiKey && !geminiKey) {
       return NextResponse.json({ ok: false, error: 'No AI key configured (OPENAI_API_KEY or GEMINI_API_KEY)' }, { status: 200 })
     }
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 200 })
 
     // Take a batch of uncategorized transactions
-    const { data: txs } = await supabase
+    // Also include transactions with any category if user wants to re-categorize
+    // Try multiple query approaches to find uncategorized transactions
+    let txs: any[] | null = null
+    let queryError: any = null
+    
+    // First try: find NULL or empty string
+    const { data: txs1, error: err1 } = await supabase
       .from('Transactions')
       .select('id, description, amount, currency, booked_at, category')
-      .or('category.is.null,category.eq.,category.eq.Uncategorized,category.eq.UNCATEGORIZED,category.eq.uncategorized')
+      .eq('user_id', userId)
+      .or('category.is.null,category.eq.')
       .limit(200)
+    
+    if (!err1 && txs1 && txs1.length > 0) {
+      txs = txs1
+    } else {
+      // Second try: find NULL only
+      const { data: txs2, error: err2 } = await supabase
+        .from('Transactions')
+        .select('id, description, amount, currency, booked_at, category')
+        .eq('user_id', userId)
+        .is('category', null)
+        .limit(200)
+      
+      if (!err2 && txs2 && txs2.length > 0) {
+        txs = txs2
+      } else {
+        // Third try: find empty string
+        const { data: txs3, error: err3 } = await supabase
+          .from('Transactions')
+          .select('id, description, amount, currency, booked_at, category')
+          .eq('user_id', userId)
+          .eq('category', '')
+          .limit(200)
+        
+        if (!err3 && txs3) {
+          txs = txs3
+        }
+        queryError = err1 || err2 || err3
+      }
+    }
+    
+    // Debug: log what we found
+    if (txs) {
+      console.log(`[AI Categorize] Found ${txs.length} uncategorized transactions`)
+      console.log(`[AI Categorize] Sample categories:`, txs.slice(0, 3).map((t: any) => ({ id: t.id, category: t.category })))
+    } else {
+      console.log(`[AI Categorize] No uncategorized transactions found. Query errors:`, queryError)
+    }
 
     const items: TxInput[] = (txs || []).map(t => ({
       id: t.id,
@@ -95,7 +137,8 @@ export async function POST() {
     }
 
     const tryGemini = async () => {
-      const models = ['gemini-1.5-flash', 'gemini-1.5-flash-001', 'gemini-1.0-pro']
+      // Use only available Gemini models - gemini-1.5-flash is the main working model
+      const models = ['gemini-1.5-flash']
       const bodyBase = {
         contents: [ { role: 'user', parts: [ { text: buildPrompt(items) } ] } ],
         // For v1 models, omit responseMimeType; enforce JSON via prompt only
@@ -107,7 +150,13 @@ export async function POST() {
         const data = await resp.json()
         if (!resp.ok) { last = { provider: 'gemini', model: m, data }; continue }
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        try { return JSON.parse(text || '{}') } catch { last = { provider: 'gemini-parse', model: m, data: text }; continue }
+        // Extract JSON from markdown code block if present
+        let jsonText = text.trim()
+        if (jsonText.startsWith('```')) {
+          // Remove markdown code block markers
+          jsonText = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim()
+        }
+        try { return JSON.parse(jsonText || '{}') } catch { last = { provider: 'gemini-parse', model: m, data: jsonText.substring(0, 200) }; continue }
       }
       throw last || { provider: 'gemini', data: 'unknown error' }
     }

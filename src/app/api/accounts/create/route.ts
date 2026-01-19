@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { requireAuth, errorResponse, successResponse, validateRequired, ApiError } from '../_utils'
+import { requireAuth, errorResponse, successResponse, validateRequired, ApiError } from '../../_utils'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'

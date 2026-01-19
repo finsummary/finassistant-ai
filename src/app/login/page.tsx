@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
@@ -13,45 +13,95 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
+  
+  // Check environment variables on mount
+  useEffect(() => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('❌ Missing Supabase environment variables!')
+      console.error('URL:', supabaseUrl ? '✓' : '✗')
+      console.error('Key:', supabaseKey ? '✓' : '✗')
+      alert('Configuration error: Supabase credentials not found. Please check .env.local file and restart the server.')
+    } else {
+      console.log('✓ Supabase URL:', supabaseUrl)
+      console.log('✓ Supabase Key:', supabaseKey.substring(0, 20) + '...')
+    }
+  }, [])
+  
   const supabase = createClient()
 
   const handleSignUp = async () => {
+    if (!email || !password) {
+      alert('Please enter both email and password')
+      return
+    }
+    
     setIsLoading(true)
+    
+    // Debug: Check Supabase client
+    console.log('Attempting sign up...')
+    console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+    
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       })
+      
       if (error) {
+        console.error('Sign up error:', error)
         alert(`Error signing up: ${error.message}`)
       } else {
+        console.log('Sign up success:', data)
         alert('Check your email for the confirmation link!')
+        // Optionally redirect to login or dashboard
+        if (data.user) {
+          router.push('/dashboard')
+        }
       }
-    } catch (error) {
-      alert(`An unexpected error occurred: ${error.message}`)
+    } catch (error: any) {
+      console.error('Sign up exception:', error)
+      console.error('Error details:', {
+        message: error?.message,
+        stack: error?.stack,
+        name: error?.name
+      })
+      
+      const errorMessage = error?.message || 'Failed to connect to Supabase'
+      alert(`Error: ${errorMessage}\n\nPlease check:\n1. .env.local file exists\n2. Server was restarted after creating .env.local\n3. Supabase project is active`)
     } finally {
       setIsLoading(false)
     }
   }
 
   const handleSignIn = async () => {
+    if (!email || !password) {
+      alert('Please enter both email and password')
+      return
+    }
+    
     setIsLoading(true)
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
+      
       if (error) {
         alert(`Error signing in: ${error.message}`)
+        console.error('Sign in error:', error)
       } else {
-        router.push('/')
+        router.push('/dashboard')
         router.refresh() // Ensures the server component re-renders
       }
-    } catch (error) {
-      alert(`An unexpected error occurred: ${error.message}`)
+    } catch (error: any) {
+      console.error('Sign in exception:', error)
+      alert(`An unexpected error occurred: ${error?.message || 'Failed to connect to Supabase. Please check your configuration.'}`)
     } finally {
       setIsLoading(false)
     }

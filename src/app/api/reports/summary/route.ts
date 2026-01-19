@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireAuth } from '../../_utils'
 
 type Period = 'all' | 'year' | 'quarter'
 
@@ -17,9 +18,8 @@ function getFromDate(period: Period): string | null {
 
 export async function GET(req: Request) {
   try {
+    const userId = await requireAuth()
     const supabase = await createClient()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 200 })
 
     const { searchParams } = new URL(req.url)
     const period = (searchParams.get('period') as Period) || 'year'
@@ -29,6 +29,7 @@ export async function GET(req: Request) {
     let query = supabase
       .from('Transactions')
       .select('amount, category, currency, booked_at, account_id')
+      .eq('user_id', userId) // CRITICAL: Filter by user_id
 
     if (fromDate) query = query.gte('booked_at', fromDate)
     if (accountId) query = query.eq('account_id', accountId)

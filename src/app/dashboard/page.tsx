@@ -36,6 +36,7 @@ export default function Dashboard({ user }: { user?: any }) {
     const [organization, setOrganization] = useState<any>(null)
     const [isCategorizing, setIsCategorizing] = useState(false)
     const [isAutoCategorizing, setIsAutoCategorizing] = useState(false)
+    const [isDeletingAll, setIsDeletingAll] = useState(false)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
     
     const router = useRouter();
@@ -55,7 +56,23 @@ export default function Dashboard({ user }: { user?: any }) {
             try {
                 const res = await fetch('/api/categories', { cache: 'no-store' })
                 const json = await res.json()
-                if (json?.ok) setCategories((json.rows || []).filter((c: any) => c?.enabled !== false))
+                if (json?.ok) {
+                    // Filter enabled categories and remove duplicates by name (prefer user-defined over global)
+                    const allCats = (json.rows || []).filter((c: any) => c?.enabled !== false)
+                    const uniqueCats = Array.from(
+                        new Map(
+                            allCats
+                                .sort((a: any, b: any) => {
+                                    // User-defined categories first (user_id !== null), then global (user_id === null)
+                                    if (a.user_id && !b.user_id) return -1
+                                    if (!a.user_id && b.user_id) return 1
+                                    return 0
+                                })
+                                .map((c: any) => [String(c.name).toLowerCase(), c])
+                        ).values()
+                    )
+                    setCategories(uniqueCats)
+                }
             } catch {}
         };
 
@@ -390,11 +407,23 @@ export default function Dashboard({ user }: { user?: any }) {
                                                                                 }}
                                                                             >
                                                                                 <option value="">Uncategorized</option>
-                                                                                {categories.filter(c => String(c.type) === 'income').map((c: any) => (
-                                                                                    <option key={`inc-${c.id}`} value={c.name}>{c.name}</option>
+                                                                                {Array.from(
+                                                                                    new Map(
+                                                                                        categories
+                                                                                            .filter(c => String(c.type) === 'income')
+                                                                                            .map((c: any) => [String(c.name).toLowerCase(), c.name])
+                                                                                    ).values()
+                                                                                ).map((name: string, idx: number) => (
+                                                                                    <option key={`inc-${idx}-${name}`} value={name}>{name}</option>
                                                                                 ))}
-                                                                                {categories.filter(c => String(c.type) === 'expense').map((c: any) => (
-                                                                                    <option key={`exp-${c.id}`} value={c.name}>{c.name}</option>
+                                                                                {Array.from(
+                                                                                    new Map(
+                                                                                        categories
+                                                                                            .filter(c => String(c.type) === 'expense')
+                                                                                            .map((c: any) => [String(c.name).toLowerCase(), c.name])
+                                                                                    ).values()
+                                                                                ).map((name: string, idx: number) => (
+                                                                                    <option key={`exp-${idx}-${name}`} value={name}>{name}</option>
                                                                                 ))}
                                                                                 </select>
                                                                         </td>
@@ -430,7 +459,11 @@ export default function Dashboard({ user }: { user?: any }) {
                                     if (!data?.ok) { addToast(`AI categorize error: ${data?.error || data?.details}`, 'error'); return }
                                     const { data: txs } = await supabase.from('Transactions').select('*')
                                     if (txs) setTransactions((txs || []) as Transaction[])
-                                    addToast(`AI categorized: ${data.updated} transactions`, 'success')
+                                    if (data.updated > 0) {
+                                        addToast(`AI categorized: ${data.updated} transactions`, 'success')
+                                    } else {
+                                        addToast(data?.message || 'No transactions to categorize. Try clearing categories first.', 'info')
+                                    }
                                 } catch (e:any) {
                                     addToast(`AI categorize error: ${e.message}`, 'error')
                                 } finally {
@@ -447,16 +480,74 @@ export default function Dashboard({ user }: { user?: any }) {
                               )}
                             </Button>
                             <Button variant="outline" onClick={async ()=>{
+                                if (!confirm('Clear all categories and re-categorize with AI? This will reset all transaction categories.')) return
                                 setIsAutoCategorizing(true)
                                 try {
-                                    const res = await fetch('/api/categorize/apply', { method:'POST' })
+                                    console.log('Step 1: Clearing categories...')
+                                    // First clear all categories
+                                    const clearRes = await fetch('/api/transactions/clear-categories', { method:'POST' })
+                                    if (!clearRes.ok) {
+                                        const text = await clearRes.text()
+                                        console.error('Clear categories HTTP error:', clearRes.status, text)
+                                        addToast(`Clear categories HTTP error: ${clearRes.status}`, 'error')
+                                        return
+                                    }
+                                    const clearData = await clearRes.json()
+                                    console.log('Clear categories response:', clearData)
+                                    if (!clearData?.ok) { 
+                                        addToast(`Clear categories error: ${clearData?.error}`, 'error')
+                                        return
+                                    }
+                                    addToast(`Cleared ${clearData.data?.cleared || 0} categories`, 'success')
+                                    
+                                    // Refresh transactions after clearing - wait a bit for DB to update
+                                    await new Promise(resolve => setTimeout(resolve, 500))
+                                    const { data: txsAfterClear, error: refreshError } = await supabase
+                                        .from('Transactions')
+                                        .select('*')
+                                        .order('booked_at', { ascending: false })
+                                    
+                                    if (refreshError) {
+                                        console.error('Error refreshing transactions:', refreshError)
+                                    } else {
+                                        console.log('Refreshed transactions:', txsAfterClear?.length, 'transactions')
+                                        const sampleCategories = txsAfterClear?.slice(0, 5).map((t: any) => ({ id: t.id, category: t.category, description: t.description?.slice(0, 30) }))
+                                        console.log('Sample categories after refresh:', sampleCategories)
+                                        const nullCount = txsAfterClear?.filter((t: any) => !t.category || t.category === null || t.category === '').length || 0
+                                        console.log(`Categories after refresh: ${nullCount} null/empty out of ${txsAfterClear?.length || 0}`)
+                                        if (txsAfterClear) {
+                                            setTransactions((txsAfterClear || []) as Transaction[])
+                                        }
+                                    }
+                                    
+                                    console.log('Step 2: Running AI categorize...')
+                                    // Then run AI categorize
+                                    const res = await fetch('/api/ai/categorize', { method:'POST' })
+                                    if (!res.ok) {
+                                        const text = await res.text()
+                                        console.error('AI categorize HTTP error:', res.status, text)
+                                        addToast(`AI categorize HTTP error: ${res.status}`, 'error')
+                                        return
+                                    }
                                     const data = await res.json()
-                                    if (!data?.ok) { addToast(`Auto-categorize error: ${data?.error || data?.details}`, 'error'); return }
+                                    console.log('AI categorize response:', data)
+                                    if (!data?.ok) { 
+                                        addToast(`AI categorize error: ${data?.error || data?.details}`, 'error')
+                                        return
+                                    }
+                                    
+                                    // Refresh transactions after categorization
                                     const { data: txs } = await supabase.from('Transactions').select('*')
                                     if (txs) setTransactions((txs || []) as Transaction[])
-                                    addToast(`Auto-categorized: ${data.updated} transactions`, 'success')
+                                    
+                                    if (data.updated > 0) {
+                                        addToast(`Cleared and re-categorized: ${data.updated} transactions`, 'success')
+                                    } else {
+                                        addToast(data?.message || 'No transactions to categorize', 'info')
+                                    }
                                 } catch (e:any) {
-                                    addToast(`Auto-categorize error: ${e.message}`, 'error')
+                                    console.error('Re-categorize error:', e)
+                                    addToast(`Re-categorize error: ${e.message}`, 'error')
                                 } finally {
                                     setIsAutoCategorizing(false)
                                 }
@@ -464,10 +555,39 @@ export default function Dashboard({ user }: { user?: any }) {
                               {isAutoCategorizing ? (
                                 <>
                                   <LoadingSpinner size="sm" className="mr-2" />
-                                  Categorizing...
+                                  Re-categorizing...
                                 </>
                               ) : (
-                                'Auto-categorize (Rules)'
+                                'Clear & Re-categorize'
+                              )}
+                            </Button>
+                            <Button variant="destructive" onClick={async ()=>{
+                                if (!confirm('Delete ALL transactions? This action cannot be undone.')) return
+                                setIsDeletingAll(true)
+                                try {
+                                    const res = await fetch('/api/transactions/delete-all', { method:'DELETE' })
+                                    const data = await res.json()
+                                    if (!data?.ok) { 
+                                        addToast(`Delete error: ${data?.error}`, 'error')
+                                        return
+                                    }
+                                    addToast(`Deleted ${data.data?.deleted || 0} transactions`, 'success')
+                                    // Refresh transactions list
+                                    const { data: txs } = await supabase.from('Transactions').select('*').order('booked_at', { ascending: false })
+                                    if (txs) setTransactions((txs || []) as Transaction[])
+                                } catch (e:any) {
+                                    addToast(`Delete error: ${e.message}`, 'error')
+                                } finally {
+                                    setIsDeletingAll(false)
+                                }
+                            }} disabled={isDeletingAll}>
+                              {isDeletingAll ? (
+                                <>
+                                  <LoadingSpinner size="sm" className="mr-2" />
+                                  Deleting...
+                                </>
+                              ) : (
+                                'Delete All'
                               )}
                             </Button>
                         </div>
