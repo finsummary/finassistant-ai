@@ -83,12 +83,23 @@ export async function GET(req: Request) {
       return acc
     }, { income: 0, expenses: 0, total: 0 })
 
+    // Calculate current balance (sum of ALL transactions, not just filtered period)
+    let currentBalance = 0
+    const { data: allTransactions } = await supabase
+      .from('Transactions')
+      .select('amount')
+      .eq('user_id', userId)
+    
+    allTransactions?.forEach((tx: any) => {
+      currentBalance += Number(tx.amount || 0)
+    })
+
     const byMonthCategory: Record<string, Record<string, { income: number; expenses: number; total: number }>> = {}
     for (const [month, mmap] of perMonthCategoryMap.entries()) {
       byMonthCategory[month] = Object.fromEntries(mmap.entries())
     }
 
-    return NextResponse.json({ ok: true, period, fromDate, count: rows.length, monthly, byCategory, byMonthCategory, totals }, { status: 200 })
+    return NextResponse.json({ ok: true, period, fromDate, count: rows.length, monthly, byCategory, byMonthCategory, totals, currentBalance }, { status: 200 })
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 200 })
   }

@@ -146,15 +146,22 @@ export default function FrameworkPage() {
   )
 }
 
-function StateStep({ data }: { data: StateData }) {
-  const hasNoData = !data || (data.currentBalance === 0 && (!data.lastMonth?.inflow && !data.lastMonth?.outflow) && (!data.thisMonth?.inflow && !data.thisMonth?.outflow))
+function StateStep({ data }: { data: any }) {
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value || 0)
+  }
+
+  const hasNoData = !data || (data.currentBalance === 0 && (!data.kpis?.month?.income && !data.kpis?.month?.expenses))
   
   if (hasNoData) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>STATE — Where am I now?</CardTitle>
-          <CardDescription>Current cash position and recent activity</CardDescription>
+          <CardDescription>Current cash position and key performance indicators</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
@@ -169,73 +176,83 @@ function StateStep({ data }: { data: StateData }) {
     )
   }
 
+  const kpis = data.kpis || {}
+  const month = kpis.month || { income: 0, expenses: 0, net: 0 }
+  const quarter = kpis.quarter || { income: 0, expenses: 0, net: 0 }
+  const ytd = kpis.ytd || { income: 0, expenses: 0, net: 0 }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>STATE — Where am I now?</CardTitle>
-        <CardDescription>Current cash position and recent activity</CardDescription>
+        <CardDescription>Current cash position and key performance indicators</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Current Cash Balance</p>
-            <p className="text-2xl font-bold">{data.currentBalance?.toFixed(2) || '0.00'}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Last Month Net</p>
-            <p className={`text-2xl font-bold ${(data.lastMonth?.net || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {(data.lastMonth?.net || 0).toFixed(2)}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">This Month Net</p>
-            <p className={`text-2xl font-bold ${(data.thisMonth?.net || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {(data.thisMonth?.net || 0).toFixed(2)}
-            </p>
+      <CardContent className="space-y-6">
+        {/* Current Cash Balance - Prominent Display */}
+        <div className="bg-muted/50 p-4 rounded-lg border-2">
+          <p className="text-sm text-muted-foreground mb-1">Current Cash Balance</p>
+          <p className="text-4xl font-bold">{formatCurrency(data.currentBalance || 0)}</p>
+        </div>
+
+        {/* KPI Table - Month, Quarter, YTD */}
+        <div>
+          <h3 className="text-lg font-semibold mb-4">Key Performance Indicators</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-2 px-3 text-sm font-medium text-muted-foreground">Period</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Income</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Expenses</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Net Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Month */}
+                <tr className="border-b hover:bg-muted/50">
+                  <td className="py-3 px-3 font-medium">This Month</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatCurrency(month.income)}</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatCurrency(month.expenses)}</td>
+                  <td className={`py-3 px-3 text-right font-semibold ${month.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {month.net >= 0 ? '+' : ''}{formatCurrency(month.net)}
+                  </td>
+                </tr>
+                {/* Quarter */}
+                <tr className="border-b hover:bg-muted/50">
+                  <td className="py-3 px-3 font-medium">This Quarter</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatCurrency(quarter.income)}</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatCurrency(quarter.expenses)}</td>
+                  <td className={`py-3 px-3 text-right font-semibold ${quarter.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {quarter.net >= 0 ? '+' : ''}{formatCurrency(quarter.net)}
+                  </td>
+                </tr>
+                {/* YTD */}
+                <tr className="border-b-2 hover:bg-muted/50 font-semibold">
+                  <td className="py-3 px-3">Year to Date</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatCurrency(ytd.income)}</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatCurrency(ytd.expenses)}</td>
+                  <td className={`py-3 px-3 text-right ${ytd.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {ytd.net >= 0 ? '+' : ''}{formatCurrency(ytd.net)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm font-medium mb-2">Last Month</p>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Inflow:</span>
-                <span className="text-green-600">{(data.lastMonth?.inflow || 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Outflow:</span>
-                <span className="text-red-600">{(data.lastMonth?.outflow || 0).toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
-          <div>
-            <p className="text-sm font-medium mb-2">This Month</p>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span>Inflow:</span>
-                <span className="text-green-600">{(data.thisMonth?.inflow || 0).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Outflow:</span>
-                <span className="text-red-600">{(data.thisMonth?.outflow || 0).toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
+        {/* Category Breakdown */}
         {data.categoryBreakdown && data.categoryBreakdown.length > 0 && (
           <div>
-            <p className="text-sm font-medium mb-2">Top Categories</p>
+            <h3 className="text-lg font-semibold mb-4">Top Categories (All Time)</h3>
             <div className="space-y-2">
               {data.categoryBreakdown.slice(0, 5).map((cat: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-2 bg-muted rounded">
-                  <span className="text-sm">{cat.name}</span>
+                <div key={idx} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                  <span className="text-sm font-medium">{cat.name}</span>
                   <div className="flex gap-4 text-sm">
-                    <span className="text-green-600">+{cat.income.toFixed(2)}</span>
-                    <span className="text-red-600">-{cat.expense.toFixed(2)}</span>
-                    <span className={cat.net >= 0 ? 'text-green-600' : 'text-red-600'}>
-                      {cat.net >= 0 ? '+' : ''}{cat.net.toFixed(2)}
+                    <span className="text-green-600">+{formatCurrency(cat.income)}</span>
+                    <span className="text-red-600">-{formatCurrency(cat.expense)}</span>
+                    <span className={`font-semibold ${cat.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {cat.net >= 0 ? '+' : ''}{formatCurrency(cat.net)}
                     </span>
                   </div>
                 </div>

@@ -257,7 +257,21 @@ export default function Dashboard({ user }: { user?: any }) {
             if (!json?.ok) { addToast(`Import error: ${json?.error || json?.details}`, 'error'); return }
             const { data: txs } = await supabase.from('Transactions').select('*')
             if (txs) setTransactions((txs || []) as Transaction[])
-            addToast(`Imported ${json.imported} of ${json.received} rows`, 'success')
+            
+            // Show detailed import results
+            const imported = json.imported || 0
+            const received = json.received || 0
+            const categorized = json.categorized || 0
+            const duplicates = json.duplicates || 0
+            
+            if (categorized > 0) {
+                addToast(`Imported ${imported} transactions. ${categorized} automatically categorized with AI.`, 'success')
+            } else if (imported > 0) {
+                addToast(`Imported ${imported} transactions, but AI categorization failed. Use "AI Categorize" button to categorize them.`, 'warning')
+            } else {
+                addToast(`Imported ${imported} of ${received} rows${duplicates > 0 ? ` (${duplicates} duplicates skipped)` : ''}`, 'info')
+            }
+            
             setCsvFile(null)
             if (fileInputRef.current) fileInputRef.current.value = ''
         } catch (e: any) {
@@ -273,6 +287,7 @@ export default function Dashboard({ user }: { user?: any }) {
                 <h1 className="text-2xl font-bold">Dashboard</h1>
                 <div className="flex gap-2">
                     <Button variant="default" onClick={() => { window.location.href = '/framework' }}>Framework</Button>
+                    <Button variant="outline" onClick={() => { window.location.href = '/cash-flow' }}>Cash Flow</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/settings/planned-items' }}>Planned Items</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/reports' }}>Reports</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/settings/categories' }}>Categories</Button>
@@ -454,18 +469,74 @@ export default function Dashboard({ user }: { user?: any }) {
                             <Button variant="outline" onClick={async ()=>{
                                 setIsCategorizing(true)
                                 try {
+                                    console.log('[Dashboard] Starting AI categorize...')
+                                    
+                                    // First, check how many uncategorized transactions we have
+                                    const { data: uncategorizedTxs, error: checkError } = await supabase
+                                        .from('Transactions')
+                                        .select('id, category')
+                                        .or('category.is.null,category.eq.')
+                                        .limit(10)
+                                    
+                                    if (checkError) {
+                                        console.error('[Dashboard] Error checking uncategorized:', checkError)
+                                    } else {
+                                        console.log(`[Dashboard] Found ${uncategorizedTxs?.length || 0} uncategorized transactions (sample)`)
+                                    }
+                                    
                                     const res = await fetch('/api/ai/categorize', { method:'POST' })
+                                    
+                                    if (!res.ok) {
+                                        const text = await res.text()
+                                        console.error('[Dashboard] AI categorize HTTP error:', res.status, text)
+                                        addToast(`AI categorize HTTP error: ${res.status}. Check console for details.`, 'error')
+                                        return
+                                    }
+                                    
                                     const data = await res.json()
-                                    if (!data?.ok) { addToast(`AI categorize error: ${data?.error || data?.details}`, 'error'); return }
-                                    const { data: txs } = await supabase.from('Transactions').select('*')
+                                    console.log('[Dashboard] AI categorize response:', data)
+                                    
+                                    if (!data?.ok) { 
+                                        // Try to extract a user-friendly error message
+                                        let errorMsg = 'Unknown error'
+                                        if (data?.error) {
+                                            errorMsg = data.error
+                                        } else if (data?.details?.data?.error?.message) {
+                                            errorMsg = `Gemini API: ${data.details.data.error.message}`
+                                        } else if (data?.details?.data?.message) {
+                                            errorMsg = `Gemini API: ${data.details.data.message}`
+                                        } else if (data?.details?.error) {
+                                            errorMsg = data.details.error
+                                        } else if (data?.details) {
+                                            errorMsg = JSON.stringify(data.details).substring(0, 200)
+                                        }
+                                        console.error('[Dashboard] AI categorize failed:', data)
+                                        addToast(`AI categorize error: ${errorMsg}`, 'error')
+                                        return 
+                                    }
+                                    
+                                    // Refresh transactions after categorization
+                                    const { data: txs, error: refreshError } = await supabase
+                                        .from('Transactions')
+                                        .select('*')
+                                        .order('booked_at', { ascending: false })
+                                    
+                                    if (refreshError) {
+                                        console.error('[Dashboard] Error refreshing transactions:', refreshError)
+                                    } else {
+                                        console.log(`[Dashboard] Refreshed ${txs?.length || 0} transactions`)
+                                    }
+                                    
                                     if (txs) setTransactions((txs || []) as Transaction[])
+                                    
                                     if (data.updated > 0) {
                                         addToast(`AI categorized: ${data.updated} transactions`, 'success')
                                     } else {
-                                        addToast(data?.message || 'No transactions to categorize. Try clearing categories first.', 'info')
+                                        addToast(data?.message || 'No uncategorized transactions found. All transactions already have categories.', 'info')
                                     }
                                 } catch (e:any) {
-                                    addToast(`AI categorize error: ${e.message}`, 'error')
+                                    console.error('[Dashboard] AI categorize exception:', e)
+                                    addToast(`AI categorize error: ${e.message}. Check console for details.`, 'error')
                                 } finally {
                                     setIsCategorizing(false)
                                 }

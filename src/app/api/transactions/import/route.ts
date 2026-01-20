@@ -152,42 +152,22 @@ Use only the provided categories. If unsure, use "Other".
     }
 
     const tryGemini = async () => {
+      const bodyBase = {
+        contents: [ { role: 'user', parts: [ { text: buildPrompt(transactions) } ] } ],
+      }
+      
       // First, try to list available models
+      let availableModels: string[] = []
       try {
         const listUrl = `https://generativelanguage.googleapis.com/v1/models?key=${geminiKey}`
         console.log(`[Import AI] Listing available Gemini models...`)
         const listResp = await fetch(listUrl)
         const listData = await listResp.json()
         if (listResp.ok && listData.models) {
-          const availableModels = listData.models
+          availableModels = listData.models
             .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
             .map((m: any) => m.name.replace('models/', ''))
-          console.log(`[Import AI] Available Gemini models:`, availableModels.slice(0, 5))
-          if (availableModels.length > 0) {
-            // Use the first available model
-            const model = availableModels[0]
-            const bodyBase = {
-              contents: [ { role: 'user', parts: [ { text: buildPrompt(transactions) } ] } ],
-            }
-            const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${geminiKey}`
-            console.log(`[Import AI] Using model: ${model}`)
-            const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyBase) })
-            const data = await resp.json()
-            if (!resp.ok) {
-              console.error(`[Import AI] GenerateContent failed:`, data.error?.message || data)
-              throw { provider: 'gemini', model, data }
-            }
-            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-            console.log(`[Import AI] Success, response length:`, text.length)
-            // Extract JSON from markdown code block if present
-            let jsonText = text.trim()
-            if (jsonText.startsWith('```')) {
-              // Remove markdown code block markers
-              jsonText = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim()
-            }
-            console.log(`[Import AI] Parsing JSON, first 100 chars:`, jsonText.substring(0, 100))
-            return JSON.parse(jsonText || '{}')
-          }
+          console.log(`[Import AI] Available Gemini models:`, availableModels.slice(0, 10))
         } else {
           console.warn(`[Import AI] Failed to list models:`, listData.error?.message || listData)
         }
@@ -195,38 +175,54 @@ Use only the provided categories. If unsure, use "Other".
         console.error(`[Import AI] ListModels exception:`, e.message)
       }
 
-      // Fallback: try common model names
-      const models = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro']
-      const bodyBase = {
-        contents: [ { role: 'user', parts: [ { text: buildPrompt(transactions) } ] } ],
-      }
+      // Use only available models from the list, or fallback to known working models
+      const modelsToTry = availableModels.length > 0 
+        ? availableModels 
+        : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.5-pro']
+      
       let last: any = null
-      for (const m of models) {
+      for (const m of modelsToTry) {
         try {
           const url = `https://generativelanguage.googleapis.com/v1/models/${m}:generateContent?key=${geminiKey}`
-          console.log(`[Import AI] Trying fallback model: ${m}`)
+          console.log(`[Import AI] Trying model: ${m}`)
           const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyBase) })
           const data = await resp.json()
           if (!resp.ok) { 
-            console.log(`[Import AI] Model ${m} failed:`, data.error?.message || data)
-            last = { provider: 'gemini', model: m, data }; 
+            const errorMsg = data.error?.message || data.message || 'Unknown error'
+            console.log(`[Import AI] Model ${m} failed:`, errorMsg)
+            
+            // Check for leaked key error
+            if (errorMsg.includes('leaked') || errorMsg.includes('reported')) {
+              throw { 
+                provider: 'gemini', 
+                model: m, 
+                data: data.error || data,
+                error: 'API key was reported as leaked. Please generate a new API key in Google AI Studio.'
+              }
+            }
+            
+            last = { provider: 'gemini', model: m, data: data.error || data }; 
             continue 
           }
           const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-          console.log(`[Import AI] Model ${m} success`)
+          console.log(`[Import AI] Model ${m} success, response length:`, text.length)
           // Extract JSON from markdown code block if present
           let jsonText = text.trim()
           if (jsonText.startsWith('```')) {
             jsonText = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim()
           }
+          console.log(`[Import AI] Parsing JSON, first 100 chars:`, jsonText.substring(0, 100))
           return JSON.parse(jsonText || '{}')
         } catch (e: any) {
-          console.error(`[Import AI] Model ${m} exception:`, e.message)
-          last = { provider: 'gemini', model: m, error: e.message }
-          continue
+          // If it's a leaked key error, throw immediately
+          if (e.error && e.error.includes('leaked')) {
+            throw e
+          }
+          console.error(`[Import AI] Model ${m} exception:`, e.message || e)
+          last = e
         }
       }
-      throw last || { provider: 'gemini', data: 'No models available' }
+      throw last || { provider: 'gemini', data: 'No models available or all models failed' }
     }
 
     if (provider === 'gemini') {
@@ -323,11 +319,17 @@ export async function POST(req: Request) {
     }
 
     // Step 1: Categorize transactions with AI BEFORE saving to database
+    // This ALWAYS runs for every import - it's automatic
     let categorizedRows = rows
+    let aiCategorizationAttempted = false
+    let aiCategorizationSuccess = false
+    
     console.log(`[Import] Starting AI categorization for ${rows.length} transactions`)
     try {
+      aiCategorizationAttempted = true
       const aiResult = await categorizeTransactionsWithAI(rows, userId)
       console.log(`[Import] AI result:`, { ok: aiResult.ok, categoriesCount: aiResult.categories?.length, error: aiResult.error })
+      
       if (aiResult.ok && aiResult.categories && aiResult.categories.length > 0) {
         // Map AI categories back to rows
         const categoryMap = new Map(aiResult.categories.map((c: any) => [c.id, c.category]))
@@ -338,14 +340,18 @@ export async function POST(req: Request) {
             category: aiCategory || null // Use AI category or null
           }
         })
-        console.log(`[Import] Applied ${aiResult.categories.length} categories from AI`)
+        aiCategorizationSuccess = true
+        console.log(`[Import] ✅ Successfully applied ${aiResult.categories.length} categories from AI`)
         console.log(`[Import] Sample categories:`, categorizedRows.slice(0, 3).map(r => ({ id: r.id, description: r.description?.slice(0, 30), category: r.category })))
       } else {
-        console.warn(`[Import] AI categorization failed or returned no categories, importing with null categories`)
+        const errorMsg = aiResult.error || 'Unknown error'
+        console.warn(`[Import] ⚠️ AI categorization failed: ${errorMsg}. Importing with null categories.`)
+        console.warn(`[Import] Transactions will be imported but will need manual or later AI categorization.`)
       }
-    } catch (e) {
-      // If AI fails, continue with null categories
-      console.error('[Import] AI categorization exception:', e)
+    } catch (e: any) {
+      // If AI fails, continue with null categories but log the error
+      console.error('[Import] ❌ AI categorization exception:', e.message || e)
+      console.error('[Import] Transactions will be imported but will need manual or later AI categorization.')
     }
 
     // Step 2: Insert transactions WITH categories already set
@@ -393,11 +399,15 @@ export async function POST(req: Request) {
       }
     }
 
+    const categorizedCount = categorizedRows.filter(r => r.category).length
+    
     return successResponse({
       received: rawItems.length,
       imported: upserted,
       duplicates,
-      categorized: categorizedRows.filter(r => r.category).length,
+      categorized: categorizedCount,
+      aiAttempted: aiCategorizationAttempted,
+      aiSuccess: aiCategorizationSuccess,
     })
   } catch (e) {
     return errorResponse(e, 'Failed to import transactions')

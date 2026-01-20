@@ -233,23 +233,78 @@ export async function POST(req: Request) {
 
     if (!response && geminiKey) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiKey}`
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              role: 'user',
-              parts: [{
-                text: `${buildSystemPrompt(frameworkStep || undefined)}\n\n${userMessage}`,
-              }],
-            }],
-          }),
-        })
+        // First, try to list available models
+        let availableModels: string[] = []
+        try {
+          const listUrl = `https://generativelanguage.googleapis.com/v1/models?key=${geminiKey}`
+          console.log(`[AI Assistant] Listing available Gemini models...`)
+          const listResp = await fetch(listUrl)
+          const listData = await listResp.json()
+          if (listResp.ok && listData.models) {
+            availableModels = listData.models
+              .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+              .map((m: any) => m.name.replace('models/', ''))
+            console.log(`[AI Assistant] Available Gemini models:`, availableModels.slice(0, 5))
+          }
+        } catch (e: any) {
+          console.error(`[AI Assistant] ListModels exception:`, e.message)
+        }
 
-        const data = await resp.json()
-        if (!resp.ok) throw new Error(data.error?.message || 'Gemini API error')
-        response = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from AI'
+        // Use only available models from the list, or fallback to known working models
+        const modelsToTry = availableModels.length > 0 
+          ? availableModels 
+          : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.5-pro']
+        
+        const bodyBase = {
+          contents: [{
+            role: 'user',
+            parts: [{
+              text: `${buildSystemPrompt(frameworkStep || undefined)}\n\n${userMessage}`,
+            }],
+          }],
+        }
+
+        let lastError: any = null
+        for (const model of modelsToTry) {
+          try {
+            const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${geminiKey}`
+            console.log(`[AI Assistant] Trying model: ${model}`)
+            const resp = await fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyBase),
+            })
+
+            const data = await resp.json()
+            if (!resp.ok) {
+              const errorMsg = data.error?.message || data.message || 'Unknown error'
+              console.log(`[AI Assistant] Model ${model} failed:`, errorMsg)
+              
+              // Check for leaked key error
+              if (errorMsg.includes('leaked') || errorMsg.includes('reported')) {
+                throw new Error('API key was reported as leaked. Please generate a new API key in Google AI Studio.')
+              }
+              
+              lastError = new Error(errorMsg)
+              continue
+            }
+            
+            response = data.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from AI'
+            console.log(`[AI Assistant] Model ${model} success, response length:`, response.length)
+            break // Success, exit loop
+          } catch (e: any) {
+            // If it's a leaked key error, throw immediately
+            if (e.message && e.message.includes('leaked')) {
+              throw e
+            }
+            console.error(`[AI Assistant] Model ${model} exception:`, e.message || e)
+            lastError = e
+          }
+        }
+
+        if (!response && lastError) {
+          throw lastError
+        }
       } catch (e: any) {
         error = e
       }

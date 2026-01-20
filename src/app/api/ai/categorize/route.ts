@@ -53,56 +53,35 @@ export async function POST() {
       return NextResponse.json({ ok: false, error: 'No AI key configured (OPENAI_API_KEY or GEMINI_API_KEY)' }, { status: 200 })
     }
 
-    // Take a batch of uncategorized transactions
-    // Also include transactions with any category if user wants to re-categorize
-    // Try multiple query approaches to find uncategorized transactions
-    let txs: any[] | null = null
-    let queryError: any = null
-    
-    // First try: find NULL or empty string
-    const { data: txs1, error: err1 } = await supabase
+    // Get ALL transactions first to see what we're working with
+    const { data: allTxs, error: allError } = await supabase
       .from('Transactions')
       .select('id, description, amount, currency, booked_at, category')
       .eq('user_id', userId)
-      .or('category.is.null,category.eq.')
-      .limit(200)
+      .limit(500)
     
-    if (!err1 && txs1 && txs1.length > 0) {
-      txs = txs1
-    } else {
-      // Second try: find NULL only
-      const { data: txs2, error: err2 } = await supabase
-        .from('Transactions')
-        .select('id, description, amount, currency, booked_at, category')
-        .eq('user_id', userId)
-        .is('category', null)
-        .limit(200)
-      
-      if (!err2 && txs2 && txs2.length > 0) {
-        txs = txs2
-      } else {
-        // Third try: find empty string
-        const { data: txs3, error: err3 } = await supabase
-          .from('Transactions')
-          .select('id, description, amount, currency, booked_at, category')
-          .eq('user_id', userId)
-          .eq('category', '')
-          .limit(200)
-        
-        if (!err3 && txs3) {
-          txs = txs3
-        }
-        queryError = err1 || err2 || err3
-      }
+    if (allError) {
+      console.error(`[AI Categorize] Error fetching transactions:`, allError)
+      return NextResponse.json({ ok: false, error: `Database error: ${allError.message}` }, { status: 200 })
     }
     
-    // Debug: log what we found
-    if (txs) {
-      console.log(`[AI Categorize] Found ${txs.length} uncategorized transactions`)
-      console.log(`[AI Categorize] Sample categories:`, txs.slice(0, 3).map((t: any) => ({ id: t.id, category: t.category })))
-    } else {
-      console.log(`[AI Categorize] No uncategorized transactions found. Query errors:`, queryError)
-    }
+    console.log(`[AI Categorize] Total transactions for user: ${allTxs?.length || 0}`)
+    
+    // Filter uncategorized transactions (NULL, empty string, or whitespace)
+    const uncategorized = (allTxs || []).filter((t: any) => {
+      const cat = String(t.category || '').trim()
+      return !cat || cat === '' || cat === 'null' || cat === 'NULL'
+    })
+    
+    console.log(`[AI Categorize] Uncategorized transactions: ${uncategorized.length}`)
+    console.log(`[AI Categorize] Sample categories from all:`, allTxs?.slice(0, 5).map((t: any) => ({ 
+      id: t.id.substring(0, 8), 
+      category: t.category, 
+      categoryType: typeof t.category,
+      description: t.description?.substring(0, 30)
+    })))
+    
+    const txs = uncategorized.slice(0, 200) // Limit to 200 for AI processing
 
     const items: TxInput[] = (txs || []).map(t => ({
       id: t.id,
@@ -137,28 +116,77 @@ export async function POST() {
     }
 
     const tryGemini = async () => {
-      // Use only available Gemini models - gemini-1.5-flash is the main working model
-      const models = ['gemini-1.5-flash']
       const bodyBase = {
         contents: [ { role: 'user', parts: [ { text: buildPrompt(items) } ] } ],
-        // For v1 models, omit responseMimeType; enforce JSON via prompt only
       }
-      let last: any = null
-      for (const m of models) {
-        const url = `https://generativelanguage.googleapis.com/v1/models/${m}:generateContent?key=${geminiKey}`
-        const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyBase) })
-        const data = await resp.json()
-        if (!resp.ok) { last = { provider: 'gemini', model: m, data }; continue }
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        // Extract JSON from markdown code block if present
-        let jsonText = text.trim()
-        if (jsonText.startsWith('```')) {
-          // Remove markdown code block markers
-          jsonText = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim()
+      
+      // First, try to list available models
+      let availableModels: string[] = []
+      try {
+        const listUrl = `https://generativelanguage.googleapis.com/v1/models?key=${geminiKey}`
+        console.log(`[AI Categorize] Listing available Gemini models...`)
+        const listResp = await fetch(listUrl)
+        const listData = await listResp.json()
+        if (listResp.ok && listData.models) {
+          availableModels = listData.models
+            .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
+            .map((m: any) => m.name.replace('models/', ''))
+          console.log(`[AI Categorize] Available Gemini models:`, availableModels.slice(0, 10))
+        } else {
+          console.warn(`[AI Categorize] Failed to list models:`, listData.error?.message || listData)
         }
-        try { return JSON.parse(jsonText || '{}') } catch { last = { provider: 'gemini-parse', model: m, data: jsonText.substring(0, 200) }; continue }
+      } catch (e: any) {
+        console.error(`[AI Categorize] ListModels exception:`, e.message)
       }
-      throw last || { provider: 'gemini', data: 'unknown error' }
+
+      // Use only available models from the list, or fallback to known working models
+      const modelsToTry = availableModels.length > 0 
+        ? availableModels 
+        : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.5-pro']
+      
+      let last: any = null
+      for (const m of modelsToTry) {
+        try {
+          const url = `https://generativelanguage.googleapis.com/v1/models/${m}:generateContent?key=${geminiKey}`
+          console.log(`[AI Categorize] Trying model: ${m}`)
+          const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyBase) })
+          const data = await resp.json()
+          if (!resp.ok) { 
+            const errorMsg = data.error?.message || data.message || 'Unknown error'
+            console.log(`[AI Categorize] Model ${m} failed:`, errorMsg)
+            
+            // Check for leaked key error
+            if (errorMsg.includes('leaked') || errorMsg.includes('reported')) {
+              throw { 
+                provider: 'gemini', 
+                model: m, 
+                data: data.error || data,
+                error: 'API key was reported as leaked. Please generate a new API key in Google AI Studio.'
+              }
+            }
+            
+            last = { provider: 'gemini', model: m, data: data.error || data }; 
+            continue 
+          }
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
+          console.log(`[AI Categorize] Model ${m} success, response length:`, text.length)
+          // Extract JSON from markdown code block if present
+          let jsonText = text.trim()
+          if (jsonText.startsWith('```')) {
+            jsonText = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim()
+          }
+          console.log(`[AI Categorize] Parsing JSON, first 100 chars:`, jsonText.substring(0, 100))
+          return JSON.parse(jsonText || '{}')
+        } catch (e: any) {
+          // If it's a leaked key error, throw immediately
+          if (e.error && e.error.includes('leaked')) {
+            throw e
+          }
+          console.error(`[AI Categorize] Model ${m} exception:`, e.message || e)
+          last = e
+        }
+      }
+      throw last || { provider: 'gemini', data: 'No models available or all models failed' }
     }
 
     if (provider === 'gemini') {
@@ -167,7 +195,23 @@ export async function POST() {
       try { parsed = await tryOpenAI() } catch (e) { lastError = e; if (geminiKey) { try { parsed = await tryGemini() } catch (ee) { lastError = ee } } }
     }
 
-    if (!parsed) return NextResponse.json({ ok: false, step: 'ai', details: lastError }, { status: 200 })
+    if (!parsed) {
+      console.error(`[AI Categorize] Failed to parse AI response:`, lastError)
+      // Format error message for user
+      let errorMessage = 'AI categorization failed'
+      if (lastError?.error) {
+        errorMessage = lastError.error
+      } else if (lastError?.data?.error?.message) {
+        errorMessage = `Gemini API error: ${lastError.data.error.message}`
+      } else if (lastError?.data?.message) {
+        errorMessage = `Gemini API error: ${lastError.data.message}`
+      } else if (typeof lastError === 'string') {
+        errorMessage = lastError
+      } else if (lastError?.data) {
+        errorMessage = `Gemini API error: ${JSON.stringify(lastError.data).substring(0, 200)}`
+      }
+      return NextResponse.json({ ok: false, step: 'ai', details: lastError, error: errorMessage }, { status: 200 })
+    }
     const results: Array<{ id: string; category: string; confidence?: number }> = parsed?.results || []
     const threshold = 0.5
     // build case-insensitive canonical map

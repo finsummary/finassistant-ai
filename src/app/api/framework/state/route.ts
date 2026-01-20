@@ -21,15 +21,36 @@ export async function GET() {
     }
 
     const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    
+    // Date ranges for KPI calculations
+    const yearStart = new Date(now.getFullYear(), 0, 1) // January 1st
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1) // First day of current month
+    
+    // Calculate quarter start (Q1: Jan-Mar, Q2: Apr-Jun, Q3: Jul-Sep, Q4: Oct-Dec)
+    const currentQuarter = Math.floor(now.getMonth() / 3)
+    const quarterStart = new Date(now.getFullYear(), currentQuarter * 3, 1)
+    
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
     // Calculate current cash balance (sum of all transactions)
     let currentBalance = 0
+    
+    // KPI accumulators
+    let monthIncome = 0
+    let monthExpenses = 0
+    let quarterIncome = 0
+    let quarterExpenses = 0
+    let ytdIncome = 0
+    let ytdExpenses = 0
+    
+    // Legacy fields for backward compatibility
     let lastMonthInflow = 0
     let lastMonthOutflow = 0
     let thisMonthInflow = 0
     let thisMonthOutflow = 0
+    
     const categoryBreakdown: Record<string, { income: number; expense: number }> = {}
 
     transactions?.forEach((tx: any) => {
@@ -43,20 +64,46 @@ export async function GET() {
         categoryBreakdown[category] = { income: 0, expense: 0 }
       }
 
+      // Calculate KPI for different periods
+      if (txDate >= monthStart && txDate <= today) {
+        // Current month (up to today)
+        if (amount > 0) {
+          monthIncome += amount
+          thisMonthInflow += amount
+        } else {
+          monthExpenses += Math.abs(amount)
+          thisMonthOutflow += Math.abs(amount)
+        }
+      }
+
+      if (txDate >= quarterStart && txDate <= today) {
+        // Current quarter (up to today)
+        if (amount > 0) {
+          quarterIncome += amount
+        } else {
+          quarterExpenses += Math.abs(amount)
+        }
+      }
+
+      if (txDate >= yearStart && txDate <= today) {
+        // Year to date (up to today)
+        if (amount > 0) {
+          ytdIncome += amount
+        } else {
+          ytdExpenses += Math.abs(amount)
+        }
+      }
+
+      // Legacy: last month calculation
       if (txDate >= lastMonth && txDate < thisMonth) {
         if (amount >= 0) {
           lastMonthInflow += amount
         } else {
           lastMonthOutflow += Math.abs(amount)
         }
-      } else if (txDate >= thisMonth) {
-        if (amount >= 0) {
-          thisMonthInflow += amount
-        } else {
-          thisMonthOutflow += Math.abs(amount)
-        }
       }
 
+      // Category breakdown (all time)
       if (amount >= 0) {
         categoryBreakdown[category].income += amount
       } else {
@@ -66,6 +113,11 @@ export async function GET() {
 
     const lastMonthNet = lastMonthInflow - lastMonthOutflow
     const thisMonthNet = thisMonthInflow - thisMonthOutflow
+    
+    // Calculate net results
+    const monthNet = monthIncome - monthExpenses
+    const quarterNet = quarterIncome - quarterExpenses
+    const ytdNet = ytdIncome - ytdExpenses
 
     // Convert category breakdown to array and sort
     const categoryArray = Object.entries(categoryBreakdown)
@@ -80,6 +132,25 @@ export async function GET() {
 
     return successResponse({
       currentBalance,
+      // Main KPI metrics
+      kpis: {
+        month: {
+          income: monthIncome,
+          expenses: monthExpenses,
+          net: monthNet,
+        },
+        quarter: {
+          income: quarterIncome,
+          expenses: quarterExpenses,
+          net: quarterNet,
+        },
+        ytd: {
+          income: ytdIncome,
+          expenses: ytdExpenses,
+          net: ytdNet,
+        },
+      },
+      // Legacy fields for backward compatibility
       lastMonth: {
         inflow: lastMonthInflow,
         outflow: lastMonthOutflow,
