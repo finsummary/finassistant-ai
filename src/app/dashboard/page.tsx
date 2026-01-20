@@ -288,6 +288,7 @@ export default function Dashboard({ user }: { user?: any }) {
                 <div className="flex gap-2">
                     <Button variant="default" onClick={() => { window.location.href = '/framework' }}>Framework</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/cash-flow' }}>Cash Flow</Button>
+                    <Button variant="outline" onClick={() => { window.location.href = '/budget' }}>Budget</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/settings/planned-items' }}>Planned Items</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/reports' }}>Reports</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/settings/categories' }}>Categories</Button>
