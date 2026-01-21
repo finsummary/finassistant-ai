@@ -122,6 +122,29 @@ export async function POST(req: Request) {
       }
     })
 
+    // Get Planned Income and Expenses
+    const { data: plannedIncome, error: piError } = await supabase
+      .from('PlannedIncome')
+      .select('*')
+      .eq('user_id', userId)
+
+    if (piError) {
+      console.warn('[Budget Generate] Failed to fetch planned income:', piError)
+    } else {
+      console.log('[Budget Generate] Planned Income loaded:', plannedIncome?.length || 0, 'items')
+    }
+
+    const { data: plannedExpenses, error: peError } = await supabase
+      .from('PlannedExpenses')
+      .select('*')
+      .eq('user_id', userId)
+
+    if (peError) {
+      console.warn('[Budget Generate] Failed to fetch planned expenses:', peError)
+    } else {
+      console.log('[Budget Generate] Planned Expenses loaded:', plannedExpenses?.length || 0, 'items')
+    }
+
     // Determine forecast months
     const now = new Date()
     const forecastMonths: string[] = []
@@ -149,6 +172,10 @@ export async function POST(req: Request) {
     forecastMonths.forEach((month, monthIndex) => {
       budget[month] = {}
       
+      // Parse month key (YYYY-MM) to Date for comparison
+      const [year, monthNum] = month.split('-').map(Number)
+      const forecastDate = new Date(year, monthNum - 1, 1)
+      
       allCategories.forEach(category => {
         const rates = categoryGrowthRates[category]
         if (!rates) return
@@ -167,6 +194,63 @@ export async function POST(req: Request) {
           expenses: Math.max(0, projectedExpenses),
         }
       })
+
+      // Add Planned Income for this month
+      let plannedIncomeForMonth = 0
+      plannedIncome?.forEach((pi: any) => {
+        const piDate = new Date(pi.expected_date)
+        const amount = Number(pi.amount || 0)
+        
+        if (pi.recurrence === 'monthly') {
+          // Monthly: add to all forecast months (starting from expected_date month)
+          // Check if forecast month is on or after the expected_date month
+          if (forecastDate >= new Date(piDate.getFullYear(), piDate.getMonth(), 1)) {
+            plannedIncomeForMonth += amount
+            console.log(`[Budget Generate] Adding monthly planned income for ${month}: ${pi.description} = ${amount}`)
+          }
+        } else if (pi.recurrence === 'one-off') {
+          // One-off: only add if the month matches exactly
+          if (piDate.getFullYear() === forecastDate.getFullYear() &&
+              piDate.getMonth() === forecastDate.getMonth()) {
+            plannedIncomeForMonth += amount
+            console.log(`[Budget Generate] Adding one-off planned income for ${month}: ${pi.description} = ${amount}`)
+          }
+        }
+      })
+
+      // Add Planned Expenses for this month
+      let plannedExpensesForMonth = 0
+      plannedExpenses?.forEach((pe: any) => {
+        const peDate = new Date(pe.expected_date)
+        const amount = Number(pe.amount || 0)
+        
+        if (pe.recurrence === 'monthly') {
+          // Monthly: add to all forecast months (starting from expected_date month)
+          // Check if forecast month is on or after the expected_date month
+          if (forecastDate >= new Date(peDate.getFullYear(), peDate.getMonth(), 1)) {
+            plannedExpensesForMonth += amount
+            console.log(`[Budget Generate] Adding monthly planned expense for ${month}: ${pe.description} = ${amount}`)
+          }
+        } else if (pe.recurrence === 'one-off') {
+          // One-off: only add if the month matches exactly
+          if (peDate.getFullYear() === forecastDate.getFullYear() &&
+              peDate.getMonth() === forecastDate.getMonth()) {
+            plannedExpensesForMonth += amount
+            console.log(`[Budget Generate] Adding one-off planned expense for ${month}: ${pe.description} = ${amount}`)
+          }
+        }
+      })
+
+      // Add planned items to budget (as separate category or add to existing)
+      // We'll add them as a special "Planned Items" category for visibility
+      if (plannedIncomeForMonth > 0 || plannedExpensesForMonth > 0) {
+        if (!budget[month]['Planned Items']) {
+          budget[month]['Planned Items'] = { income: 0, expenses: 0 }
+        }
+        budget[month]['Planned Items'].income += plannedIncomeForMonth
+        budget[month]['Planned Items'].expenses += plannedExpensesForMonth
+        console.log(`[Budget Generate] Planned Items for ${month}: income=${plannedIncomeForMonth}, expenses=${plannedExpensesForMonth}`)
+      }
     })
 
     return successResponse({

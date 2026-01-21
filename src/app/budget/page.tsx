@@ -35,6 +35,8 @@ export default function BudgetPage() {
   const [editingCell, setEditingCell] = useState<{ month: string; category: string; type: 'income' | 'expense' } | null>(null)
   const [editingGrowthRates, setEditingGrowthRates] = useState<Record<string, { incomeRate: number; expenseRate: number }>>({})
   const [editingGrowthRateCell, setEditingGrowthRateCell] = useState<{ category: string; type: 'incomeRate' | 'expenseRate' } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
 
   const numberFmt = useMemo(() => new Intl.NumberFormat('en-US', { 
     minimumFractionDigits: noCents ? 0 : 2, 
@@ -48,19 +50,148 @@ export default function BudgetPage() {
     return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
 
-  // Fetch current balance
+  // Fetch current balance and load saved budget
   useEffect(() => {
-    const fetchBalance = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch('/api/reports/summary?period=all', { cache: 'no-store' })
-        const json = await res.json()
-        if (json?.ok && json.currentBalance !== undefined) {
-          setCurrentBalance(json.currentBalance)
+        // Fetch current balance
+        const balanceRes = await fetch('/api/reports/summary?period=all', { cache: 'no-store' })
+        const balanceJson = await balanceRes.json()
+        if (balanceJson?.ok && balanceJson.currentBalance !== undefined) {
+          setCurrentBalance(balanceJson.currentBalance)
+        }
+
+        // Load saved budget
+        const budgetRes = await fetch('/api/budget/load', { cache: 'no-store' })
+        const budgetJson = await budgetRes.json()
+        console.log('[Budget Page] Load response:', budgetJson)
+        // API returns { ok: true, data: { budget: {...} } }
+        const loadedBudget = budgetJson?.data?.budget || budgetJson?.budget
+        if (budgetJson?.ok && loadedBudget) {
+          console.log('[Budget Page] Setting budget data:', {
+            horizon: loadedBudget.horizon,
+            forecastMonthsCount: loadedBudget.forecastMonths?.length || 0,
+            categoriesCount: Object.keys(loadedBudget.categoryGrowthRates || {}).length,
+            budgetMonthsCount: Object.keys(loadedBudget.budget || {}).length,
+          })
+          setBudgetData(loadedBudget)
+          setHorizon(loadedBudget.horizon || '6months')
+          if (loadedBudget.generatedAt) {
+            setLastSaved(new Date(loadedBudget.generatedAt))
+          }
+        } else {
+          console.log('[Budget Page] No budget found or error:', budgetJson)
         }
       } catch {}
     }
-    fetchBalance()
+    fetchData()
   }, [])
+
+  const saveBudget = async () => {
+    if (!budgetData) {
+      addToast('No budget to save', 'warning')
+      return
+    }
+
+    setSaving(true)
+    try {
+      // Merge edited values with budget data
+      const mergedBudget = { ...budgetData.budget }
+      Object.keys(editing).forEach(editMonth => {
+        if (!mergedBudget[editMonth]) mergedBudget[editMonth] = {}
+        Object.keys(editing[editMonth]).forEach(editCategory => {
+          if (!mergedBudget[editMonth][editCategory]) {
+            mergedBudget[editMonth][editCategory] = { income: 0, expenses: 0 }
+          }
+          mergedBudget[editMonth][editCategory] = {
+            ...mergedBudget[editMonth][editCategory],
+            ...editing[editMonth][editCategory],
+          }
+        })
+      })
+
+      // Merge edited growth rates
+      const mergedGrowthRates = { ...budgetData.categoryGrowthRates }
+      Object.keys(editingGrowthRates).forEach(category => {
+        if (!mergedGrowthRates[category]) {
+          mergedGrowthRates[category] = {
+            incomeRate: 0,
+            expenseRate: 0,
+            lastValue: { income: 0, expenses: 0 },
+          }
+        }
+        mergedGrowthRates[category] = {
+          ...mergedGrowthRates[category],
+          ...editingGrowthRates[category],
+        }
+      })
+
+      const saveRes = await fetch('/api/budget/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          horizon: budgetData.horizon,
+          forecastMonths: budgetData.forecastMonths,
+          categoryGrowthRates: mergedGrowthRates,
+          budget: mergedBudget,
+        }),
+      })
+      if (!saveRes.ok) {
+        const errorText = await saveRes.text()
+        console.error('[Budget Page] Save HTTP error:', saveRes.status, errorText)
+        addToast(`Failed to save budget: HTTP ${saveRes.status}`, 'error')
+        return
+      }
+
+      const saveJson = await saveRes.json()
+      console.log('[Budget Page] Save response:', saveJson)
+      if (saveJson?.ok && saveJson?.data?.budget) {
+        // Update budgetData with merged values
+        const updatedBudget = {
+          ...budgetData,
+          categoryGrowthRates: mergedGrowthRates,
+          budget: mergedBudget,
+        }
+        setBudgetData(updatedBudget)
+        setEditing({}) // Clear editing state
+        setEditingGrowthRates({})
+        setLastSaved(new Date())
+        
+        // Verify save by reloading
+        setTimeout(async () => {
+          try {
+            const verifyRes = await fetch('/api/budget/load', { cache: 'no-store' })
+            const verifyJson = await verifyRes.json()
+            const verifiedBudget = verifyJson?.data?.budget || verifyJson?.budget
+            if (verifyJson?.ok && verifiedBudget) {
+              console.log('[Budget Page] Budget verified in database')
+              addToast('Budget saved successfully and verified', 'success')
+            } else {
+              console.warn('[Budget Page] Budget save verification failed:', verifyJson)
+              addToast('Budget saved but verification failed', 'warning')
+            }
+          } catch (e) {
+            console.error('[Budget Page] Verification error:', e)
+            addToast('Budget saved successfully', 'success')
+          }
+        }, 500)
+      } else {
+        console.error('[Budget Page] Save failed:', saveJson)
+        const errorMsg = saveJson?.error || 'Unknown error'
+        // Check if error mentions missing table
+        if (errorMsg.includes('does not exist') || errorMsg.includes('42P01')) {
+          addToast('Budget table not found. Please run migration: 20251103000000_create_budget.sql', 'error')
+        } else {
+          addToast(`Failed to save budget: ${errorMsg}`, 'error')
+        }
+      }
+    } catch (e: any) {
+      console.error('[Budget Page] Save exception:', e)
+      addToast(`Save error: ${e.message}`, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const generateBudget = async () => {
     setGenerating(true)
@@ -75,12 +206,43 @@ export default function BudgetPage() {
         addToast(`Budget generation failed: ${json?.error}`, 'error')
         return
       }
+      console.log('[Budget Page] Generated budget data:', {
+        forecastMonths: json.data?.forecastMonths?.length || 0,
+        categories: Object.keys(json.data?.budget || {}).length > 0 
+          ? Object.keys(Object.values(json.data.budget)[0] || {}) 
+          : [],
+        plannedItemsInFirstMonth: json.data?.budget?.[json.data?.forecastMonths?.[0]]?.['Planned Items']
+      })
       setBudgetData(json.data)
       setEditing({}) // Reset editing state
       setEditingCell(null)
       setEditingGrowthRates({}) // Reset growth rates editing
       setEditingGrowthRateCell(null)
-      addToast('Budget generated successfully', 'success')
+      
+      // Auto-save budget
+      try {
+        const saveRes = await fetch('/api/budget/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            horizon: json.data.horizon,
+            forecastMonths: json.data.forecastMonths,
+            categoryGrowthRates: json.data.categoryGrowthRates,
+            budget: json.data.budget,
+          }),
+        })
+        const saveJson = await saveRes.json()
+        console.log('[Budget Page] Auto-save after generate:', saveJson)
+        if (saveJson?.ok) {
+          setLastSaved(new Date())
+          addToast('Budget generated and saved successfully', 'success')
+        } else {
+          console.error('[Budget Page] Auto-save failed:', saveJson)
+          addToast('Budget generated but failed to save', 'warning')
+        }
+      } catch (e: any) {
+        addToast('Budget generated but failed to save', 'warning')
+      }
     } catch (e: any) {
       addToast(`Budget generation error: ${e.message}`, 'error')
     } finally {
@@ -177,11 +339,12 @@ export default function BudgetPage() {
       })
 
       // Update budget data
-      setBudgetData({
+      const newBudgetData = {
         ...budgetData,
         categoryGrowthRates: updatedGrowthRates,
         budget: updatedBudget,
-      })
+      }
+      setBudgetData(newBudgetData)
       
       return updated
     })
@@ -318,34 +481,57 @@ export default function BudgetPage() {
       const net = monthTotals[month]?.net || 0
       runningBalance += net
       dataPoints.push(runningBalance)
+      console.log(`[Budget Chart] Month ${month}: net=${net}, runningBalance=${runningBalance}`)
     })
 
     const labels = ['Current', ...monthLabels]
     const zeroLineData = labels.map(() => 0)
 
-    // Find the index where balance goes negative
+    // Debug: log dataPoints to see actual values
+    console.log('[Budget Chart] Data points:', dataPoints.map((val, idx) => ({ 
+      label: labels[idx], 
+      value: val 
+    })))
+
+    // Find the index where balance goes negative (first negative value)
+    // Also check if balance crosses zero (goes from positive to negative)
     let negativeIndex = -1
-    for (let i = 0; i < dataPoints.length; i++) {
-      if (dataPoints[i] <= 0 && negativeIndex === -1) {
+    for (let i = 1; i < dataPoints.length; i++) {
+      // Check if balance crosses from positive/zero to negative
+      if (dataPoints[i-1] >= 0 && dataPoints[i] < 0) {
         negativeIndex = i
         break
       }
     }
+    
+    // If no crossing found, check for first negative value
+    if (negativeIndex === -1) {
+      for (let i = 0; i < dataPoints.length; i++) {
+        if (dataPoints[i] < 0) {
+          negativeIndex = i
+          break
+        }
+      }
+    }
+    
+    console.log('[Budget Chart] Negative index:', negativeIndex, 'at label:', negativeIndex >= 0 ? labels[negativeIndex] : 'none')
+    console.log('[Budget Chart] Data points around negative:', negativeIndex >= 0 ? {
+      before: negativeIndex > 0 ? { label: labels[negativeIndex - 1], value: dataPoints[negativeIndex - 1] } : null,
+      at: { label: labels[negativeIndex], value: dataPoints[negativeIndex] },
+      after: negativeIndex < dataPoints.length - 1 ? { label: labels[negativeIndex + 1], value: dataPoints[negativeIndex + 1] } : null,
+    } : 'none')
 
     const datasets: any[] = []
 
-    // Create positive data array (includes transition point at 0)
+    // Create positive data array - show all positive values up to (but not including) transition
     const positiveData = dataPoints.map((val, idx) => {
       if (negativeIndex >= 0) {
         // If we found a negative transition point
         if (idx < negativeIndex) {
           // Before transition: show positive values
           return val > 0 ? val : null
-        } else if (idx === negativeIndex) {
-          // At transition: show 0 to connect to negative segment
-          return 0
         } else {
-          // After transition: null
+          // At and after transition: null (negative values go to negative dataset)
           return null
         }
       }
@@ -353,7 +539,7 @@ export default function BudgetPage() {
       return val > 0 ? val : null
     })
 
-    // Create negative data array (includes transition point at 0)
+    // Create negative data array - show 0 before first negative, then all negative values
     const negativeData = dataPoints.map((val, idx) => {
       if (negativeIndex >= 0) {
         // If we found a negative transition point
@@ -361,18 +547,31 @@ export default function BudgetPage() {
           // Before transition: null
           return null
         } else if (idx === negativeIndex) {
-          // At transition: show 0 to connect from positive segment
-          return 0
+          // At transition: if previous was positive, show 0 first, then the negative value
+          // But we can only show one value per index, so show the actual negative value
+          // The connection will be handled by showing the last positive value and first negative
+          return val < 0 ? val : (val === 0 ? 0 : null)
         } else {
-          // After transition: show negative/zero values
-          return val <= 0 ? val : null
+          // After transition: show ALL negative values
+          return val < 0 ? val : null
         }
       }
       // No transition: all null
       return null
     })
+    
+    // To connect lines smoothly, add 0 at the point before first negative in negativeData
+    if (negativeIndex >= 0 && negativeIndex > 0) {
+      // Set the point before negativeIndex to 0 in negativeData to connect the lines
+      negativeData[negativeIndex - 1] = 0
+    }
+    
+    console.log('[Budget Chart] Data points:', dataPoints)
+    console.log('[Budget Chart] Negative index:', negativeIndex)
+    console.log('[Budget Chart] Negative data (after fix):', negativeData)
+    console.log('[Budget Chart] Positive data (after fix):', positiveData)
 
-    // Positive segment (green)
+    // Positive segment (green) - always add
     datasets.push({
       label: 'Positive Balance',
       data: positiveData,
@@ -388,7 +587,7 @@ export default function BudgetPage() {
       tension: 0.3,
       pointRadius: 4,
       pointBackgroundColor: '#16a34a',
-      spanGaps: true,
+      spanGaps: false, // Don't span gaps to avoid connecting through nulls
     })
 
     // Negative segment (red) - only add if there are negative values
@@ -408,7 +607,7 @@ export default function BudgetPage() {
         tension: 0.3,
         pointRadius: 4,
         pointBackgroundColor: '#dc2626',
-        spanGaps: true,
+        spanGaps: false, // Don't span gaps
       })
     }
 
@@ -552,20 +751,46 @@ export default function BudgetPage() {
                   : 'Generate budget until end of current year'}
               </p>
             </div>
-            <Button 
-              onClick={generateBudget} 
-              disabled={generating}
-              className="min-w-[150px]"
-            >
-              {generating ? (
-                <>
-                  <LoadingSpinner size="sm" className="mr-2" />
-                  Generating...
-                </>
-              ) : (
-                'Generate Budget'
+            <div className="flex gap-2">
+              <Button 
+                onClick={generateBudget} 
+                disabled={generating}
+                className="min-w-[150px]"
+              >
+                {generating ? (
+                  <>
+                    <LoadingSpinner size="sm" className="mr-2" />
+                    Generating...
+                  </>
+                ) : (
+                  'Generate Budget'
+                )}
+              </Button>
+              {budgetData && (
+                <div className="flex items-center gap-2">
+                  <Button 
+                    onClick={saveBudget} 
+                    disabled={saving}
+                    variant="outline"
+                    className="min-w-[120px]"
+                  >
+                    {saving ? (
+                      <>
+                        <LoadingSpinner size="sm" className="mr-2" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Budget'
+                    )}
+                  </Button>
+                  {lastSaved && (
+                    <span className="text-xs text-muted-foreground">
+                      Saved {lastSaved.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
               )}
-            </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
