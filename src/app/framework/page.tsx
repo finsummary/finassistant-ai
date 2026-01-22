@@ -4,9 +4,32 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/ui/loading'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { AIAssistant } from './ai-assistant'
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency'
+import { Line } from 'react-chartjs-2'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
+
+type DeltaData = {
+  previousMonth?: { income: number; expenses: number; net: number }
+  currentMonth?: { income: number; expenses: number; net: number }
+  changes?: { income: number; expenses: number; net: number }
+  percentChanges?: { income: number; expenses: number; net: number }
+  topIncomeIncreases?: Array<{ category: string; change: number; percentChange: number; type: 'income' }>
+  topIncomeDecreases?: Array<{ category: string; change: number; percentChange: number; type: 'income' }>
+  topExpenseIncreases?: Array<{ category: string; change: number; percentChange: number; type: 'expense' }>
+  topExpenseDecreases?: Array<{ category: string; change: number; percentChange: number; type: 'expense' }>
+  // Legacy fields for backward compatibility
+  previousMonthTotal?: number
+  currentMonthTotal?: number
+  totalDelta?: number
+  percentChange?: number
+  topIncreases?: Array<{ category: string; change: number; percentChange: number }>
+  topDecreases?: Array<{ category: string; change: number; percentChange: number }>
+}
 
 type FrameworkData = {
   state: any
@@ -14,6 +37,7 @@ type FrameworkData = {
   trajectory: any
   exposure: any
   choice: any
+  currency?: string
 }
 
 export default function FrameworkPage() {
@@ -55,6 +79,7 @@ export default function FrameworkPage() {
           trajectory: trajectoryData.data,
           exposure: exposureData.data,
           choice: choiceData.data,
+          currency: stateData.data?.currency || 'GBP', // Pass currency to all steps
         })
       } catch (e: any) {
         setError(e.message || 'Failed to load data')
@@ -105,9 +130,6 @@ export default function FrameworkPage() {
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Financial Framework</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push('/executive-summary')}>
-            Executive Summary
-          </Button>
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             Dashboard
           </Button>
@@ -133,9 +155,9 @@ export default function FrameworkPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           {activeStep === 'state' && <StateStep data={data.state} />}
-          {activeStep === 'delta' && <DeltaStep data={data.delta} />}
-          {activeStep === 'trajectory' && <TrajectoryStep data={data.trajectory} />}
-          {activeStep === 'exposure' && <ExposureStep data={data.exposure} />}
+          {activeStep === 'delta' && <DeltaStep data={data.delta} currency={data.currency} />}
+          {activeStep === 'trajectory' && <TrajectoryStep data={data.trajectory} currency={data.currency} />}
+          {activeStep === 'exposure' && <ExposureStep data={data.exposure} currency={data.currency} />}
           {activeStep === 'choice' && <ChoiceStep data={data.choice} />}
         </div>
         <div className="lg:col-span-1">
@@ -147,12 +169,9 @@ export default function FrameworkPage() {
 }
 
 function StateStep({ data }: { data: any }) {
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value || 0)
-  }
+  const currency = data?.currency || 'GBP'
+  const currentDate = data?.currentDate || new Date().toISOString().split('T')[0]
+  const formatValue = (value: number) => formatCurrency(value, currency, true)
 
   const hasNoData = !data || (data.currentBalance === 0 && (!data.kpis?.month?.income && !data.kpis?.month?.expenses))
   
@@ -161,7 +180,7 @@ function StateStep({ data }: { data: any }) {
       <Card>
         <CardHeader>
           <CardTitle>STATE — Where am I now?</CardTitle>
-          <CardDescription>Current cash position and key performance indicators</CardDescription>
+          <CardDescription>Current cash position and summary</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
@@ -180,23 +199,28 @@ function StateStep({ data }: { data: any }) {
   const month = kpis.month || { income: 0, expenses: 0, net: 0 }
   const quarter = kpis.quarter || { income: 0, expenses: 0, net: 0 }
   const ytd = kpis.ytd || { income: 0, expenses: 0, net: 0 }
+  
+  const incomeCategories = data?.incomeCategories || []
+  const expenseCategories = data?.expenseCategories || []
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>STATE — Where am I now?</CardTitle>
-        <CardDescription>Current cash position and key performance indicators</CardDescription>
+        <CardDescription>
+          Current cash position and summary • As of {new Date(currentDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Current Cash Balance - Prominent Display */}
         <div className="bg-muted/50 p-4 rounded-lg border-2">
           <p className="text-sm text-muted-foreground mb-1">Current Cash Balance</p>
-          <p className="text-4xl font-bold">{formatCurrency(data.currentBalance || 0)}</p>
+          <p className="text-4xl font-bold">{formatValue(data.currentBalance || 0)}</p>
         </div>
 
-        {/* KPI Table - Month, Quarter, YTD */}
+        {/* Summary Table - Month, Quarter, YTD */}
         <div>
-          <h3 className="text-lg font-semibold mb-4">Key Performance Indicators</h3>
+          <h3 className="text-lg font-semibold mb-4">Summary</h3>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
@@ -211,28 +235,28 @@ function StateStep({ data }: { data: any }) {
                 {/* Month */}
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-3 px-3 font-medium">This Month</td>
-                  <td className="py-3 px-3 text-right text-green-600">{formatCurrency(month.income)}</td>
-                  <td className="py-3 px-3 text-right text-red-600">{formatCurrency(month.expenses)}</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatValue(month.income)}</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatValue(month.expenses)}</td>
                   <td className={`py-3 px-3 text-right font-semibold ${month.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {month.net >= 0 ? '+' : ''}{formatCurrency(month.net)}
+                    {month.net >= 0 ? '+' : ''}{formatValue(month.net)}
                   </td>
                 </tr>
                 {/* Quarter */}
                 <tr className="border-b hover:bg-muted/50">
                   <td className="py-3 px-3 font-medium">This Quarter</td>
-                  <td className="py-3 px-3 text-right text-green-600">{formatCurrency(quarter.income)}</td>
-                  <td className="py-3 px-3 text-right text-red-600">{formatCurrency(quarter.expenses)}</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatValue(quarter.income)}</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatValue(quarter.expenses)}</td>
                   <td className={`py-3 px-3 text-right font-semibold ${quarter.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {quarter.net >= 0 ? '+' : ''}{formatCurrency(quarter.net)}
+                    {quarter.net >= 0 ? '+' : ''}{formatValue(quarter.net)}
                   </td>
                 </tr>
                 {/* YTD */}
                 <tr className="border-b-2 hover:bg-muted/50 font-semibold">
                   <td className="py-3 px-3">Year to Date</td>
-                  <td className="py-3 px-3 text-right text-green-600">{formatCurrency(ytd.income)}</td>
-                  <td className="py-3 px-3 text-right text-red-600">{formatCurrency(ytd.expenses)}</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatValue(ytd.income)}</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatValue(ytd.expenses)}</td>
                   <td className={`py-3 px-3 text-right ${ytd.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {ytd.net >= 0 ? '+' : ''}{formatCurrency(ytd.net)}
+                    {ytd.net >= 0 ? '+' : ''}{formatValue(ytd.net)}
                   </td>
                 </tr>
               </tbody>
@@ -240,21 +264,30 @@ function StateStep({ data }: { data: any }) {
           </div>
         </div>
 
-        {/* Category Breakdown */}
-        {data.categoryBreakdown && data.categoryBreakdown.length > 0 && (
+        {/* Income Categories */}
+        {incomeCategories.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold mb-4">Top Categories (All Time)</h3>
+            <h3 className="text-lg font-semibold mb-4">Top 5 Income Categories (Year to Date)</h3>
             <div className="space-y-2">
-              {data.categoryBreakdown.slice(0, 5).map((cat: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+              {incomeCategories.map((cat: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
                   <span className="text-sm font-medium">{cat.name}</span>
-                  <div className="flex gap-4 text-sm">
-                    <span className="text-green-600">+{formatCurrency(cat.income)}</span>
-                    <span className="text-red-600">-{formatCurrency(cat.expense)}</span>
-                    <span className={`font-semibold ${cat.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {cat.net >= 0 ? '+' : ''}{formatCurrency(cat.net)}
-                    </span>
-                  </div>
+                  <span className="text-sm font-semibold text-green-600">{formatValue(cat.income)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Expense Categories */}
+        {expenseCategories.length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Top 5 Expense Categories (Year to Date)</h3>
+            <div className="space-y-2">
+              {expenseCategories.map((cat: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
+                  <span className="text-sm font-medium">{cat.name}</span>
+                  <span className="text-sm font-semibold text-red-600">{formatValue(cat.expense)}</span>
                 </div>
               ))}
             </div>
@@ -265,8 +298,34 @@ function StateStep({ data }: { data: any }) {
   )
 }
 
-function DeltaStep({ data }: { data: DeltaData }) {
-  const hasNoData = !data || ((data.previousMonthTotal === 0 || !data.previousMonthTotal) && (data.currentMonthTotal === 0 || !data.currentMonthTotal))
+function DeltaStep({ data, currency = 'GBP' }: { data: DeltaData; currency?: string }) {
+  const formatValue = (value: number) => formatCurrency(value, currency, true)
+
+  // Support both new and legacy data formats
+  const prevMonth = data.previousMonth || {
+    income: 0,
+    expenses: 0,
+    net: (data.previousMonthTotal || 0),
+  }
+  const currMonth = data.currentMonth || {
+    income: 0,
+    expenses: 0,
+    net: (data.currentMonthTotal || 0),
+  }
+  const changes = data.changes || {
+    income: 0,
+    expenses: 0,
+    net: (data.totalDelta || 0),
+  }
+  const percentChanges = data.percentChanges || {
+    income: 0,
+    expenses: 0,
+    net: (data.percentChange || 0),
+  }
+
+  const hasNoData = !data || (
+    (prevMonth.income === 0 && prevMonth.expenses === 0 && currMonth.income === 0 && currMonth.expenses === 0)
+  )
   
   if (hasNoData) {
     return (
@@ -291,60 +350,134 @@ function DeltaStep({ data }: { data: DeltaData }) {
         <CardTitle>DELTA — What changed?</CardTitle>
         <CardDescription>Current month vs previous month comparison</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Previous Month Total</p>
-            <p className="text-xl font-bold">{data.previousMonthTotal?.toFixed(2) || '0.00'}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Current Month Total</p>
-            <p className="text-xl font-bold">{data.currentMonthTotal?.toFixed(2) || '0.00'}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Change</p>
-            <p className={`text-xl font-bold ${(data.totalDelta || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {(data.totalDelta || 0) >= 0 ? '+' : ''}{data.totalDelta?.toFixed(2) || '0.00'}
-              {data.percentChange !== undefined && ` (${data.percentChange.toFixed(1)}%)`}
-            </p>
+      <CardContent className="space-y-6">
+        {/* Summary Table */}
+        <div>
+          <h3 className="text-lg font-semibold mb-4">Summary</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-2 px-3 text-sm font-medium text-muted-foreground">Metric</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Previous Month</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Current Month</th>
+                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Change</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b hover:bg-muted/50">
+                  <td className="py-3 px-3 font-medium">Income</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatValue(prevMonth.income)}</td>
+                  <td className="py-3 px-3 text-right text-green-600">{formatValue(currMonth.income)}</td>
+                  <td className={`py-3 px-3 text-right font-semibold ${changes.income >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {changes.income >= 0 ? '+' : ''}{formatValue(changes.income)}
+                    {percentChanges.income !== 0 && ` (${percentChanges.income >= 0 ? '+' : ''}${percentChanges.income.toFixed(1)}%)`}
+                  </td>
+                </tr>
+                <tr className="border-b hover:bg-muted/50">
+                  <td className="py-3 px-3 font-medium">Expenses</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatValue(prevMonth.expenses)}</td>
+                  <td className="py-3 px-3 text-right text-red-600">{formatValue(currMonth.expenses)}</td>
+                  <td className={`py-3 px-3 text-right font-semibold ${changes.expenses <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {changes.expenses >= 0 ? '+' : ''}{formatValue(changes.expenses)}
+                    {percentChanges.expenses !== 0 && ` (${percentChanges.expenses >= 0 ? '+' : ''}${percentChanges.expenses.toFixed(1)}%)`}
+                  </td>
+                </tr>
+                <tr className="border-b-2 hover:bg-muted/50 font-semibold">
+                  <td className="py-3 px-3">Net Result</td>
+                  <td className={`py-3 px-3 text-right ${prevMonth.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatValue(prevMonth.net)}
+                  </td>
+                  <td className={`py-3 px-3 text-right ${currMonth.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatValue(currMonth.net)}
+                  </td>
+                  <td className={`py-3 px-3 text-right ${changes.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {changes.net >= 0 ? '+' : ''}{formatValue(changes.net)}
+                    {percentChanges.net !== 0 && ` (${percentChanges.net >= 0 ? '+' : ''}${percentChanges.net.toFixed(1)}%)`}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {(!data.topIncreases || data.topIncreases.length === 0) && (!data.topDecreases || data.topDecreases.length === 0) && (
+        {/* Category Changes */}
+        {(data.topIncomeIncreases && data.topIncomeIncreases.length > 0) ||
+         (data.topIncomeDecreases && data.topIncomeDecreases.length > 0) ||
+         (data.topExpenseIncreases && data.topExpenseIncreases.length > 0) ||
+         (data.topExpenseDecreases && data.topExpenseDecreases.length > 0) ? (
+          <>
+            {/* Income Increases (Good - Green) */}
+            {data.topIncomeIncreases && data.topIncomeIncreases.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Income Increases (Good)</p>
+                <div className="space-y-2">
+                  {data.topIncomeIncreases.map((inc: any, idx: number) => (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-green-50 rounded">
+                      <span className="text-sm">{inc.category}</span>
+                      <span className="text-sm font-semibold text-green-600">
+                        +{formatValue(inc.change)} ({inc.percentChange.toFixed(1)}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Income Decreases (Bad - Red) */}
+            {data.topIncomeDecreases && data.topIncomeDecreases.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Income Decreases (Bad)</p>
+                <div className="space-y-2">
+                  {data.topIncomeDecreases.map((dec: any, idx: number) => (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-red-50 rounded">
+                      <span className="text-sm">{dec.category}</span>
+                      <span className="text-sm font-semibold text-red-600">
+                        -{formatValue(dec.change)} ({dec.percentChange.toFixed(1)}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Expense Increases (Bad - Red) */}
+            {data.topExpenseIncreases && data.topExpenseIncreases.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Expense Increases (Bad)</p>
+                <div className="space-y-2">
+                  {data.topExpenseIncreases.map((inc: any, idx: number) => (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-red-50 rounded">
+                      <span className="text-sm">{inc.category}</span>
+                      <span className="text-sm font-semibold text-red-600">
+                        +{formatValue(inc.change)} ({inc.percentChange.toFixed(1)}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Expense Decreases (Good - Green) */}
+            {data.topExpenseDecreases && data.topExpenseDecreases.length > 0 && (
+              <div>
+                <p className="text-sm font-medium mb-2">Expense Decreases (Good)</p>
+                <div className="space-y-2">
+                  {data.topExpenseDecreases.map((dec: any, idx: number) => (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-green-50 rounded">
+                      <span className="text-sm">{dec.category}</span>
+                      <span className="text-sm font-semibold text-green-600">
+                        -{formatValue(dec.change)} ({dec.percentChange.toFixed(1)}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
           <div className="text-center py-4">
             <p className="text-sm text-muted-foreground">No significant category changes detected.</p>
-          </div>
-        )}
-
-        {data.topIncreases && data.topIncreases.length > 0 && (
-          <div>
-            <p className="text-sm font-medium mb-2">Top Increases</p>
-            <div className="space-y-2">
-              {data.topIncreases.map((inc: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-2 bg-green-50 rounded">
-                  <span className="text-sm">{inc.category}</span>
-                  <span className="text-sm font-semibold text-green-600">
-                    +{inc.change.toFixed(2)} ({inc.percentChange.toFixed(1)}%)
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {data.topDecreases && data.topDecreases.length > 0 && (
-          <div>
-            <p className="text-sm font-medium mb-2">Top Decreases</p>
-            <div className="space-y-2">
-              {data.topDecreases.map((dec: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-2 bg-red-50 rounded">
-                  <span className="text-sm">{dec.category}</span>
-                  <span className="text-sm font-semibold text-red-600">
-                    -{dec.change.toFixed(2)} ({dec.percentChange.toFixed(1)}%)
-                  </span>
-                </div>
-              ))}
-            </div>
           </div>
         )}
       </CardContent>
@@ -352,26 +485,312 @@ function DeltaStep({ data }: { data: DeltaData }) {
   )
 }
 
-function TrajectoryStep({ data }: { data: TrajectoryData }) {
-  const hasNoData = !data || (!data.forecast || data.forecast.length === 0)
-  
+type TrajectoryData = {
+  currentBalance?: number
+  currentMonth?: string
+  horizon?: '6months' | 'yearend'
+  rollingForecast?: Array<{
+    month: string
+    type: 'actual' | 'forecast'
+    income: number
+    expenses: number
+    net: number
+    balance: number
+  }>
+  summary?: {
+    actual: { months: number; income: number; expenses: number; net: number }
+    forecast: { months: number; income: number; expenses: number; net: number }
+    total: { months: number; income: number; expenses: number; net: number }
+  }
+  // Legacy fields
+  forecast?: Array<{ month: string; income: number; expenses: number; balance: number }>
+  avgMonthlyChange?: number
+  lowPoints?: Array<{ month: string; balance: number }>
+}
+
+function TrajectoryStep({ data, currency = 'GBP' }: { data: TrajectoryData; currency?: string }) {
+  const [rollingForecastData, setRollingForecastData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [horizon, setHorizon] = useState<'6months' | 'yearend'>('6months')
+
+  const formatValue = useMemo(() => (value: number) => formatCurrency(value, currency, true), [currency])
+
+  const formatMonth = useMemo(() => (month: string) => {
+    const [year, monthNum] = month.split('-')
+    const date = new Date(parseInt(year), parseInt(monthNum) - 1, 1)
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  }, [])
+
+  useEffect(() => {
+    const loadRollingForecast = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/rolling-forecast?horizon=${horizon}`)
+        const json = await res.json()
+        if (json?.ok) {
+          setRollingForecastData(json.data)
+        }
+      } catch (e: any) {
+        console.error('Error loading rolling forecast:', e.message)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadRollingForecast()
+  }, [horizon])
+
+  const forecastData = rollingForecastData || data
+
+  // All hooks must be before conditional returns (Rules of Hooks)
+  // Calculate Cash Runway
+  const cashRunway = useMemo(() => {
+    if (!forecastData || !forecastData.rollingForecast) return null
+
+    const { currentBalance, rollingForecast } = forecastData
+    if (currentBalance === 0) return null
+
+    let runway: number | null = null
+    let runwayMessage: string = ''
+    let runwayColor: string = 'text-gray-500'
+    let negativeMonth: string | null = null
+
+    const firstNegativeIndex = rollingForecast.findIndex((f: any) => f.balance <= 0)
+    if (firstNegativeIndex >= 0) {
+      runway = firstNegativeIndex + 1
+      negativeMonth = rollingForecast[firstNegativeIndex].month
+    }
+
+    if (runway === null) {
+      const forecastMonths = rollingForecast.filter((f: any) => f.type === 'forecast')
+      if (forecastMonths.length > 0) {
+        const avgMonthlyChange = forecastMonths.reduce((sum: number, m: any) => sum + m.net, 0) / forecastMonths.length
+        if (avgMonthlyChange < 0) {
+          runway = Math.floor(currentBalance / Math.abs(avgMonthlyChange))
+        }
+      }
+    }
+
+    if (runway !== null) {
+      if (runway <= 3) {
+        runwayColor = 'text-red-600'
+        runwayMessage = negativeMonth ? `Critical: Cash runs out in ${runway} month${runway !== 1 ? 's' : ''} (${formatMonth(negativeMonth)})` : `Critical: ${runway} month${runway !== 1 ? 's' : ''} until cash runs out`
+      } else if (runway <= 6) {
+        runwayColor = 'text-yellow-600'
+        runwayMessage = negativeMonth ? `Warning: Cash runs out in ${runway} month${runway !== 1 ? 's' : ''} (${formatMonth(negativeMonth)})` : `Warning: ${runway} month${runway !== 1 ? 's' : ''} until cash runs out`
+      } else {
+        runwayColor = 'text-green-600'
+        runwayMessage = negativeMonth ? `${runway} month${runway !== 1 ? 's' : ''} until cash runs out (${formatMonth(negativeMonth)})` : `${runway} month${runway !== 1 ? 's' : ''} until cash runs out`
+      }
+    } else {
+      runwayMessage = 'No cash runway limit detected'
+      runwayColor = 'text-green-600'
+    }
+
+    return { value: runway, message: runwayMessage, color: runwayColor, negativeMonth }
+  }, [forecastData, formatMonth])
+
+  // Chart data
+  const chartData = useMemo(() => {
+    if (!forecastData?.rollingForecast) return { labels: [], datasets: [] }
+
+    const labels = forecastData.rollingForecast.map((f: any) => formatMonth(f.month))
+    
+    const forecastStartIndex = forecastData.rollingForecast.findIndex((f: any) => f.type === 'forecast')
+    
+    let negativeIndex = -1
+    for (let i = 0; i < forecastData.rollingForecast.length; i++) {
+      if (forecastData.rollingForecast[i].balance < 0 && negativeIndex === -1) {
+        negativeIndex = i
+        break
+      }
+    }
+
+    const actualData = forecastData.rollingForecast.map((f: any) => f.type === 'actual' ? f.balance : null)
+    const actualPositive = actualData.map((val: any, idx: number) => {
+      if (val === null) return null
+      if (negativeIndex >= 0 && idx >= negativeIndex) return null
+      return val > 0 ? val : null
+    })
+    const actualNegative = actualData.map((val: any, idx: number) => {
+      if (val === null) return null
+      if (negativeIndex >= 0 && idx < negativeIndex) return null
+      return val < 0 ? val : (idx === negativeIndex && val === 0 ? 0 : null)
+    })
+    
+    if (negativeIndex >= 0 && negativeIndex > 0 && actualData[negativeIndex - 1] !== null) {
+      actualNegative[negativeIndex - 1] = 0
+    }
+
+    const forecastData_vals = forecastData.rollingForecast.map((f: any) => f.type === 'forecast' ? f.balance : null)
+    const forecastPositive = forecastData_vals.map((val: any, idx: number) => {
+      if (val === null) return null
+      if (negativeIndex >= 0 && idx >= negativeIndex) return null
+      return val > 0 ? val : null
+    })
+    const forecastNegative = forecastData_vals.map((val: any, idx: number) => {
+      if (val === null) return null
+      if (negativeIndex >= 0 && idx < negativeIndex) return null
+      return val < 0 ? val : (idx === negativeIndex && val === 0 ? 0 : null)
+    })
+    
+    if (negativeIndex >= 0 && negativeIndex > 0 && forecastData_vals[negativeIndex - 1] !== null) {
+      forecastNegative[negativeIndex - 1] = 0
+    }
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: 'Actual Balance (Positive)',
+          data: actualPositive,
+          borderColor: '#3b82f6',
+          backgroundColor: (context: any) => {
+            const ctx = context.chart.ctx
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
+            gradient.addColorStop(0, '#3b82f680')
+            gradient.addColorStop(1, '#3b82f600')
+            return gradient
+          },
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#3b82f6',
+          spanGaps: true,
+        },
+        {
+          label: 'Actual Balance (Negative)',
+          data: actualNegative,
+          borderColor: '#dc2626',
+          backgroundColor: (context: any) => {
+            const ctx = context.chart.ctx
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
+            gradient.addColorStop(0, '#dc262680')
+            gradient.addColorStop(1, '#dc262600')
+            return gradient
+          },
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#dc2626',
+          spanGaps: true,
+        },
+        {
+          label: 'Forecast Balance (Positive)',
+          data: forecastPositive,
+          borderColor: '#3b82f6',
+          borderDash: [5, 5],
+          backgroundColor: (context: any) => {
+            const ctx = context.chart.ctx
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
+            gradient.addColorStop(0, '#3b82f680')
+            gradient.addColorStop(1, '#3b82f600')
+            return gradient
+          },
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#3b82f6',
+          spanGaps: true,
+        },
+        {
+          label: 'Forecast Balance (Negative)',
+          data: forecastNegative,
+          borderColor: '#dc2626',
+          borderDash: [5, 5],
+          backgroundColor: (context: any) => {
+            const ctx = context.chart.ctx
+            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
+            gradient.addColorStop(0, '#dc262680')
+            gradient.addColorStop(1, '#dc262600')
+            return gradient
+          },
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: '#dc2626',
+          spanGaps: true,
+        },
+        {
+          label: 'Zero Line',
+          data: labels.map(() => 0),
+          borderColor: '#9ca3af',
+          borderDash: [5, 5],
+          pointRadius: 0,
+          fill: false,
+          tension: 0,
+        },
+      ],
+    }
+  }, [forecastData, formatMonth])
+
+  const chartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: 'Cash Flow Trajectory: Actual vs Forecast',
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context: any) {
+            return `${context.dataset.label}: ${formatValue(context.parsed.y)}`
+          },
+        },
+      },
+    },
+    scales: {
+      y: {
+        ticks: {
+          callback: function(value: any) {
+            return formatValue(value)
+          },
+        },
+      },
+    },
+  }), [formatValue])
+
+  // Conditional returns AFTER all hooks
+  const hasNoData = !forecastData || (!forecastData.rollingForecast || forecastData.rollingForecast.length === 0)
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>TRAJECTORY — Where am I heading?</CardTitle>
+          <CardDescription>Cash flow forecast with budget</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <LoadingSpinner size="lg" />
+            <p className="text-muted-foreground mt-4">Loading forecast data...</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   if (hasNoData) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>TRAJECTORY — Where am I heading?</CardTitle>
-          <CardDescription>6-month cash forecast</CardDescription>
+          <CardDescription>Cash flow forecast with budget</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
             <p className="text-muted-foreground mb-2">Not enough data for forecasting yet.</p>
-            <p className="text-sm text-muted-foreground">Add transactions and planned items to generate a cash flow forecast.</p>
+            <p className="text-sm text-muted-foreground">Add transactions and generate a budget to see cash flow forecast.</p>
             <div className="flex gap-2 justify-center mt-4">
               <Button variant="outline" onClick={() => window.location.href = '/dashboard'}>
                 Add Transactions
               </Button>
-              <Button variant="outline" onClick={() => window.location.href = '/settings/planned-items'}>
-                Add Planned Items
+              <Button variant="outline" onClick={() => window.location.href = '/budget'}>
+                Generate Budget
               </Button>
             </div>
           </div>
@@ -384,60 +803,117 @@ function TrajectoryStep({ data }: { data: TrajectoryData }) {
     <Card>
       <CardHeader>
         <CardTitle>TRAJECTORY — Where am I heading?</CardTitle>
-        <CardDescription>{data.horizon || 6}-month cash forecast</CardDescription>
+        <CardDescription>Cash flow forecast combining actual transactions with budget</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Current Balance</p>
-            <p className="text-2xl font-bold">{data.currentBalance?.toFixed(2) || '0.00'}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Avg Monthly Change</p>
-            <p className={`text-2xl font-bold ${(data.avgMonthlyChange || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {(data.avgMonthlyChange || 0) >= 0 ? '+' : ''}{data.avgMonthlyChange?.toFixed(2) || '0.00'}
-            </p>
-          </div>
+      <CardContent className="space-y-6">
+        {/* Horizon selector */}
+        <div className="flex gap-2">
+          <Button 
+            variant={horizon === '6months' ? 'default' : 'outline'} 
+            size="sm"
+            onClick={() => setHorizon('6months')}
+          >
+            6 Months
+          </Button>
+          <Button 
+            variant={horizon === 'yearend' ? 'default' : 'outline'} 
+            size="sm"
+            onClick={() => setHorizon('yearend')}
+          >
+            Until Year End
+          </Button>
         </div>
 
-        {data.forecast && data.forecast.length > 0 && (
-          <div>
-            <p className="text-sm font-medium mb-2">Forecast</p>
-            <div className="space-y-2">
-              {data.forecast.map((f: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-3 border rounded">
-                  <div>
-                    <p className="font-medium">{f.month}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Income: {f.income.toFixed(2)} | Expenses: {f.expenses.toFixed(2)}
-                    </p>
-                  </div>
-                  <p className={`text-lg font-bold ${f.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {f.balance.toFixed(2)}
-                  </p>
-                </div>
-              ))}
-            </div>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-muted/50 p-4 rounded-lg">
+            <p className="text-sm text-muted-foreground mb-1">Current Balance</p>
+            <p className="text-2xl font-bold">{formatValue(forecastData.currentBalance || 0)}</p>
+          </div>
+          {forecastData.summary && (
+            <>
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">Forecast Income</p>
+                <p className="text-2xl font-bold text-green-600">{formatValue(forecastData.summary.forecast.income)}</p>
+                <p className="text-xs text-muted-foreground mt-1">{forecastData.summary.forecast.months} months</p>
+              </div>
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">Forecast Expenses</p>
+                <p className="text-2xl font-bold text-red-600">{formatValue(forecastData.summary.forecast.expenses)}</p>
+                <p className="text-xs text-muted-foreground mt-1">{forecastData.summary.forecast.months} months</p>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Cash Runway */}
+        {cashRunway && (
+          <div className={`p-4 rounded-lg border-2 ${cashRunway.color === 'text-red-600' ? 'bg-red-50 border-red-200' : cashRunway.color === 'text-yellow-600' ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'}`}>
+            <p className="text-sm font-medium mb-1">Cash Runway</p>
+            <p className={`text-xl font-bold ${cashRunway.color}`}>
+              {cashRunway.value !== null ? `${cashRunway.value} month${cashRunway.value !== 1 ? 's' : ''}` : 'Unlimited'}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">{cashRunway.message}</p>
           </div>
         )}
 
-        {data.lowPoints && data.lowPoints.length > 0 && (
-          <div>
-            <p className="text-sm font-medium mb-2">Projected Low Points</p>
-            <div className="space-y-2">
-              {data.lowPoints.map((lp: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-2 bg-yellow-50 rounded">
-                  <span className="text-sm">{lp.month}</span>
-                  <span className="text-sm font-semibold text-yellow-600">{lp.balance.toFixed(2)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Chart */}
+        <div style={{ height: '400px' }}>
+          <Line data={chartData} options={chartOptions} />
+        </div>
 
-        {(!data.lowPoints || data.lowPoints.length === 0) && (
-          <div className="text-center py-2">
-            <p className="text-sm text-muted-foreground">No low points projected in the forecast period.</p>
+        {/* Summary Table */}
+        {forecastData.summary && (
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Summary</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 px-3 text-sm font-medium text-muted-foreground">Period</th>
+                    <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Months</th>
+                    <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Income</th>
+                    <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Expenses</th>
+                    <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Net</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {forecastData.summary.actual && (
+                    <tr className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-3 font-medium">Actual</td>
+                      <td className="py-3 px-3 text-right">{forecastData.summary.actual.months}</td>
+                      <td className="py-3 px-3 text-right text-green-600">{formatValue(forecastData.summary.actual.income)}</td>
+                      <td className="py-3 px-3 text-right text-red-600">{formatValue(forecastData.summary.actual.expenses)}</td>
+                      <td className={`py-3 px-3 text-right font-semibold ${forecastData.summary.actual.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatValue(forecastData.summary.actual.net)}
+                      </td>
+                    </tr>
+                  )}
+                  {forecastData.summary.forecast && (
+                    <tr className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-3 font-medium">Forecast</td>
+                      <td className="py-3 px-3 text-right">{forecastData.summary.forecast.months}</td>
+                      <td className="py-3 px-3 text-right text-green-600">{formatValue(forecastData.summary.forecast.income)}</td>
+                      <td className="py-3 px-3 text-right text-red-600">{formatValue(forecastData.summary.forecast.expenses)}</td>
+                      <td className={`py-3 px-3 text-right font-semibold ${forecastData.summary.forecast.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatValue(forecastData.summary.forecast.net)}
+                      </td>
+                    </tr>
+                  )}
+                  {forecastData.summary.total && (
+                    <tr className="border-b-2 hover:bg-muted/50 font-semibold">
+                      <td className="py-3 px-3">Total</td>
+                      <td className="py-3 px-3 text-right">{forecastData.summary.total.months}</td>
+                      <td className="py-3 px-3 text-right text-green-600">{formatValue(forecastData.summary.total.income)}</td>
+                      <td className="py-3 px-3 text-right text-red-600">{formatValue(forecastData.summary.total.expenses)}</td>
+                      <td className={`py-3 px-3 text-right ${forecastData.summary.total.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatValue(forecastData.summary.total.net)}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </CardContent>
@@ -445,15 +921,64 @@ function TrajectoryStep({ data }: { data: TrajectoryData }) {
   )
 }
 
-function ExposureStep({ data }: { data: ExposureData }) {
+function ExposureStep({ data, currency = 'GBP' }: { data: ExposureData; currency?: string }) {
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
+  const [loadingAnalysis, setLoadingAnalysis] = useState(true) // Start with loading true
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+
+  const formatValue = useMemo(() => (value: number) => formatCurrency(value, currency, true), [currency])
+
+  useEffect(() => {
+    const loadAIAnalysis = async () => {
+      setLoadingAnalysis(true)
+      setAnalysisError(null)
+      try {
+        const res = await fetch('/api/framework/exposure/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        const json = await res.json()
+        if (json?.ok) {
+          setAiAnalysis(json.data)
+        } else {
+          setAnalysisError(json?.error || 'Failed to load AI analysis')
+        }
+      } catch (e: any) {
+        setAnalysisError(e.message || 'Failed to load AI analysis')
+      } finally {
+        setLoadingAnalysis(false)
+      }
+    }
+    loadAIAnalysis()
+  }, [])
+
   const hasNoData = !data || (data.runway === null && (!data.riskFlags || data.riskFlags.length === 0) && (!data.upcomingExpenses || data.upcomingExpenses.length === 0))
   
-  if (hasNoData) {
+  // Show loading state while AI analysis is being fetched
+  if (loadingAnalysis && !aiAnalysis) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>EXPOSURE — What could break?</CardTitle>
-          <CardDescription>Risk assessment and cash runway</CardDescription>
+          <CardDescription>AI-powered risk assessment and cash runway</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <LoadingSpinner size="lg" />
+            <p className="text-muted-foreground mt-4">AI is analyzing your financial data...</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+  
+  // Only show "no data" message if AI analysis also failed and we have no data
+  if (hasNoData && !aiAnalysis && !loadingAnalysis) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>EXPOSURE — What could break?</CardTitle>
+          <CardDescription>AI-powered risk assessment and cash runway</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
@@ -465,74 +990,193 @@ function ExposureStep({ data }: { data: ExposureData }) {
     )
   }
 
+  const risks = aiAnalysis?.risks || data.riskFlags || []
+  const opportunities = aiAnalysis?.opportunities || []
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>EXPOSURE — What could break?</CardTitle>
-        <CardDescription>Risk assessment and cash runway</CardDescription>
+        <CardDescription>AI-powered risk assessment and cash runway</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
+        {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Cash Runway</p>
+          <div className="bg-muted/50 p-4 rounded-lg">
+            <p className="text-sm text-muted-foreground mb-1">Cash Runway</p>
             <p className={`text-2xl font-bold ${data.runway !== null && data.runway <= 3 ? 'text-red-600' : data.runway !== null && data.runway <= 6 ? 'text-yellow-600' : 'text-green-600'}`}>
               {data.runway !== null ? `${data.runway} months` : 'Unlimited'}
             </p>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Current Balance</p>
-            <p className="text-2xl font-bold">{data.currentBalance?.toFixed(2) || '0.00'}</p>
+          <div className="bg-muted/50 p-4 rounded-lg">
+            <p className="text-sm text-muted-foreground mb-1">Current Balance</p>
+            <p className="text-2xl font-bold">{formatValue(data.currentBalance || 0)}</p>
           </div>
         </div>
 
-        {(!data.riskFlags || data.riskFlags.length === 0) && (!data.upcomingExpenses || data.upcomingExpenses.length === 0) && (
-          <div className="text-center py-4">
-            <p className="text-sm text-muted-foreground">No significant risks identified at this time.</p>
+        {/* AI Analysis Summary */}
+        {aiAnalysis?.analysis && (
+          <div className={`p-4 rounded-lg border-2 ${
+            aiAnalysis.analysis.overallRisk === 'high' ? 'bg-red-50 border-red-200' :
+            aiAnalysis.analysis.overallRisk === 'medium' ? 'bg-yellow-50 border-yellow-200' :
+            'bg-green-50 border-green-200'
+          }`}>
+            <div className="flex justify-between items-start mb-2">
+              <div>
+                <p className="text-sm font-medium mb-1">Overall Risk Assessment</p>
+                <p className={`text-lg font-bold ${
+                  aiAnalysis.analysis.overallRisk === 'high' ? 'text-red-800' :
+                  aiAnalysis.analysis.overallRisk === 'medium' ? 'text-yellow-800' :
+                  'text-green-800'
+                }`}>
+                  {aiAnalysis.analysis.overallRisk?.toUpperCase() || 'UNKNOWN'}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setLoadingAnalysis(true)
+                  setAnalysisError(null)
+                  try {
+                    const res = await fetch('/api/framework/exposure/analyze', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                    })
+                    const json = await res.json()
+                    if (json?.ok) {
+                      setAiAnalysis(json.data)
+                    } else {
+                      setAnalysisError(json?.error || 'Failed to refresh analysis')
+                    }
+                  } catch (e: any) {
+                    setAnalysisError(e.message || 'Failed to refresh analysis')
+                  } finally {
+                    setLoadingAnalysis(false)
+                  }
+                }}
+                disabled={loadingAnalysis}
+              >
+                {loadingAnalysis ? 'Analyzing...' : 'Refresh Analysis'}
+              </Button>
+            </div>
+            {aiAnalysis.analysis.summary && (
+              <p className="text-sm text-muted-foreground">{aiAnalysis.analysis.summary}</p>
+            )}
+            {aiAnalysis.message && (
+              <p className="text-xs text-muted-foreground mt-2">{aiAnalysis.message}</p>
+            )}
           </div>
         )}
 
-        {data.riskFlags && data.riskFlags.length > 0 && (
+        {/* Loading State */}
+        {loadingAnalysis && !aiAnalysis && (
+          <div className="text-center py-8">
+            <LoadingSpinner size="lg" />
+            <p className="text-muted-foreground mt-4">AI is analyzing your financial data...</p>
+          </div>
+        )}
+
+        {/* Error State */}
+        {analysisError && (
+          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800">
+              {analysisError}
+              {aiAnalysis?.risks && aiAnalysis.risks.length > 0 && ' Showing rule-based risks instead.'}
+            </p>
+          </div>
+        )}
+
+        {/* AI-Powered Risks */}
+        {risks.length > 0 && (
           <div>
-            <p className="text-sm font-medium mb-2">Risk Flags</p>
-            <div className="space-y-2">
-              {data.riskFlags.map((flag: any, idx: number) => (
+            <h3 className="text-lg font-semibold mb-4">Identified Risks</h3>
+            <div className="space-y-3">
+              {risks.map((risk: any, idx: number) => (
                 <div
                   key={idx}
-                  className={`p-3 rounded ${
-                    flag.severity === 'high' ? 'bg-red-50 border border-red-200' :
-                    flag.severity === 'medium' ? 'bg-yellow-50 border border-yellow-200' :
-                    'bg-blue-50 border border-blue-200'
+                  className={`p-4 rounded-lg border-2 ${
+                    risk.severity === 'high' ? 'bg-red-50 border-red-200' :
+                    risk.severity === 'medium' ? 'bg-yellow-50 border-yellow-200' :
+                    'bg-blue-50 border-blue-200'
                   }`}
                 >
-                  <p className={`text-sm font-medium ${
-                    flag.severity === 'high' ? 'text-red-800' :
-                    flag.severity === 'medium' ? 'text-yellow-800' :
-                    'text-blue-800'
-                  }`}>
-                    {flag.severity.toUpperCase()}: {flag.message}
-                  </p>
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <p className={`text-sm font-semibold ${
+                        risk.severity === 'high' ? 'text-red-800' :
+                        risk.severity === 'medium' ? 'text-yellow-800' :
+                        'text-blue-800'
+                      }`}>
+                        {risk.severity?.toUpperCase() || 'RISK'}: {risk.title || risk.message || 'Risk identified'}
+                      </p>
+                      {risk.category && (
+                        <p className="text-xs text-muted-foreground mt-1">Category: {risk.category.replace('_', ' ')}</p>
+                      )}
+                    </div>
+                  </div>
+                  {risk.description && (
+                    <p className="text-sm text-muted-foreground mb-2">{risk.description}</p>
+                  )}
+                  {risk.impact && (
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Potential Impact:</p>
+                      <p className="text-xs text-muted-foreground">{risk.impact}</p>
+                    </div>
+                  )}
+                  {risk.recommendation && (
+                    <div className="mt-2 pt-2 border-t border-gray-200">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Recommendation:</p>
+                      <p className="text-xs text-muted-foreground">{risk.recommendation}</p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         )}
 
+        {/* Opportunities */}
+        {opportunities.length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold mb-4">Opportunities</h3>
+            <div className="space-y-2">
+              {opportunities.map((opp: any, idx: number) => (
+                <div key={idx} className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm font-semibold text-green-800 mb-1">{opp.title}</p>
+                  {opp.description && (
+                    <p className="text-xs text-green-700">{opp.description}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Upcoming Expenses */}
         {data.upcomingExpenses && data.upcomingExpenses.length > 0 && (
           <div>
-            <p className="text-sm font-medium mb-2">Upcoming Large Expenses</p>
+            <h3 className="text-lg font-semibold mb-4">Upcoming Large Expenses</h3>
             <div className="space-y-2">
               {data.upcomingExpenses.map((exp: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-2 bg-muted rounded">
+                <div key={idx} className="flex justify-between items-center p-3 bg-muted rounded-lg">
                   <div>
                     <p className="text-sm font-medium">{exp.description}</p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(exp.expectedDate).toLocaleDateString()} • {exp.recurrence}
                     </p>
                   </div>
-                  <span className="text-sm font-semibold text-red-600">-{exp.amount.toFixed(2)}</span>
+                  <span className="text-sm font-semibold text-red-600">-{formatValue(exp.amount)}</span>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* No Risks Message */}
+        {risks.length === 0 && opportunities.length === 0 && !loadingAnalysis && (
+          <div className="text-center py-4">
+            <p className="text-sm text-muted-foreground">No significant risks or opportunities identified at this time.</p>
           </div>
         )}
       </CardContent>
@@ -540,10 +1184,58 @@ function ExposureStep({ data }: { data: ExposureData }) {
   )
 }
 
-function ChoiceStep({ data }: { data: ChoiceData }) {
-  const hasNoData = !data || !data.decisions || data.decisions.length === 0
+function ChoiceStep({ data, currency = 'GBP' }: { data: ChoiceData; currency?: string }) {
+  const [aiDecisions, setAiDecisions] = useState<any>(null)
+  const [loadingDecisions, setLoadingDecisions] = useState(true)
+  const [decisionsError, setDecisionsError] = useState<string | null>(null)
+
+  const formatValue = useMemo(() => (value: number) => formatCurrency(value, currency, true), [currency])
+
+  useEffect(() => {
+    const loadAIDecisions = async () => {
+      setLoadingDecisions(true)
+      setDecisionsError(null)
+      try {
+        const res = await fetch('/api/framework/choice/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        const json = await res.json()
+        if (json?.ok) {
+          setAiDecisions(json.data)
+        } else {
+          setDecisionsError(json?.error || 'Failed to load AI recommendations')
+        }
+      } catch (e: any) {
+        setDecisionsError(e.message || 'Failed to load AI recommendations')
+      } finally {
+        setLoadingDecisions(false)
+      }
+    }
+    loadAIDecisions()
+  }, [])
+
+  const decisions = aiDecisions?.decisions || data?.decisions || []
+  const hasNoData = decisions.length === 0
+
+  if (loadingDecisions && !aiDecisions) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>CHOICE — What should I do next?</CardTitle>
+          <CardDescription>AI-powered decision recommendations</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <LoadingSpinner size="lg" />
+            <p className="text-muted-foreground mt-4">AI is analyzing your financial situation to provide recommendations...</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
   
-  if (hasNoData) {
+  if (hasNoData && !loadingDecisions) {
     return (
       <Card>
         <CardHeader>
@@ -564,43 +1256,98 @@ function ChoiceStep({ data }: { data: ChoiceData }) {
     <Card>
       <CardHeader>
         <CardTitle>CHOICE — What should I do next?</CardTitle>
-        <CardDescription>Decision options based on current state</CardDescription>
+        <CardDescription>AI-powered decision recommendations based on your financial situation</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {data.decisions && data.decisions.length > 0 ? (
+      <CardContent className="space-y-6">
+        {/* AI Summary */}
+        {aiDecisions?.summary && (
+          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm font-medium mb-1">Recommended Strategy</p>
+            <p className="text-sm text-muted-foreground">{aiDecisions.summary}</p>
+            {aiDecisions.message && (
+              <p className="text-xs text-muted-foreground mt-2">{aiDecisions.message}</p>
+            )}
+          </div>
+        )}
+
+        {/* Error State */}
+        {decisionsError && (
+          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <p className="text-sm text-yellow-800">
+              {decisionsError}
+              {decisions.length > 0 && ' Showing rule-based recommendations instead.'}
+            </p>
+          </div>
+        )}
+
+        {/* Refresh Button */}
+        <div className="flex justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              setLoadingDecisions(true)
+              setDecisionsError(null)
+              try {
+                const res = await fetch('/api/framework/choice/analyze', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                })
+                const json = await res.json()
+                if (json?.ok) {
+                  setAiDecisions(json.data)
+                } else {
+                  setDecisionsError(json?.error || 'Failed to refresh recommendations')
+                }
+              } catch (e: any) {
+                setDecisionsError(e.message || 'Failed to refresh recommendations')
+              } finally {
+                setLoadingDecisions(false)
+              }
+            }}
+            disabled={loadingDecisions}
+          >
+            {loadingDecisions ? 'Analyzing...' : 'Refresh Recommendations'}
+          </Button>
+        </div>
+
+        {decisions.length > 0 ? (
           <div className="space-y-4">
-            {data.decisions.map((decision: any, idx: number) => (
-              <Card key={idx}>
-                <CardContent className="pt-6">
-                  <div className="flex justify-between items-start mb-3">
-                    <h3 className="font-semibold">{decision.description}</h3>
-                    <div className="flex gap-2">
-                      <span className={`px-2 py-1 rounded text-xs ${
+            {decisions.map((decision: any, idx: number) => (
+              <div key={idx} className="p-4 border-2 rounded-lg space-y-3 hover:bg-muted/50 transition-colors">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <p className="font-semibold text-lg mb-2">{decision.description}</p>
+                    {decision.rationale && (
+                      <p className="text-sm text-muted-foreground mb-3">{decision.rationale}</p>
+                    )}
+                    <div className="flex gap-3 text-sm">
+                      <span className={`px-3 py-1 rounded-full font-medium ${
                         decision.risk === 'high' ? 'bg-red-100 text-red-800' :
                         decision.risk === 'medium' ? 'bg-yellow-100 text-yellow-800' :
                         'bg-green-100 text-green-800'
                       }`}>
                         {decision.risk} risk
                       </span>
-                      <span className="px-2 py-1 rounded text-xs bg-muted">
+                      <span className="px-3 py-1 rounded-full bg-gray-100 text-gray-700">
                         {decision.timeframe.replace('_', ' ')}
                       </span>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-muted-foreground">Cash Impact</p>
-                      <p className={`font-semibold ${decision.cashImpact >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {decision.cashImpact >= 0 ? '+' : ''}{decision.cashImpact.toFixed(2)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Reversibility</p>
-                      <p className="font-semibold">{decision.reversibility.replace('_', ' ')}</p>
-                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 pt-3 border-t">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Cash Impact</p>
+                    <p className={`text-lg font-bold ${decision.cashImpact > 0 ? 'text-green-600' : decision.cashImpact < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                      {decision.cashImpact > 0 ? '+' : ''}{formatValue(decision.cashImpact)}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Reversibility</p>
+                    <p className="text-sm font-medium">{decision.reversibility.replace('_', ' ')}</p>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         ) : (

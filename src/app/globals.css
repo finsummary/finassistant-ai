@@ -121,7 +121,7 @@
   }
 }
 
-/* Print styles for Executive Summary */
+/* Print styles */
 @media print {
   @page {
     margin: 1cm;

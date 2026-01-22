@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/ui/loading'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 
@@ -54,7 +55,7 @@ export default function RollingForecastPage() {
     const loadData = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`/api/rolling-forecast?horizon=${horizon}`, { cache: 'no-store' })
+        const res = await fetch(`/api/rolling-forecast?horizon=${horizon}`)
         const json = await res.json()
         if (!json?.ok) {
           console.error('Failed to load rolling forecast:', json?.error)
@@ -317,13 +318,22 @@ export default function RollingForecastPage() {
     },
   }
 
-  if (loading) {
+  if (loading && !data) {
     return (
-      <div className="p-4 md:p-8">
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-          <LoadingSpinner size="lg" />
-          <p className="text-muted-foreground">Loading rolling forecast...</p>
+      <div className="p-4 md:p-8 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+          <Skeleton className="h-10 w-32" />
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+        </div>
+        <Skeleton className="h-96" />
       </div>
     )
   }

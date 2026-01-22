@@ -8,6 +8,7 @@ import { LoadingSpinner } from '@/components/ui/loading';
 import { useToast } from '@/components/ui/toast';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { User } from 'lucide-react';
 
 type Transaction = {
     id: string
@@ -54,7 +55,7 @@ export default function Dashboard({ user }: { user?: any }) {
 
         const fetchCategories = async () => {
             try {
-                const res = await fetch('/api/categories', { cache: 'no-store' })
+                const res = await fetch('/api/categories')
                 const json = await res.json()
                 if (json?.ok) {
                     // Filter enabled categories and remove duplicates by name (prefer user-defined over global)
@@ -78,7 +79,7 @@ export default function Dashboard({ user }: { user?: any }) {
 
         const fetchOrganization = async () => {
             try {
-                const res = await fetch('/api/organizations', { cache: 'no-store' })
+                const res = await fetch('/api/organizations')
                 const json = await res.json()
                 if (json?.ok) setOrganization(json.data)
             } catch {}
@@ -290,10 +291,16 @@ export default function Dashboard({ user }: { user?: any }) {
                     <Button variant="outline" onClick={() => { window.location.href = '/cash-flow' }}>Cash Flow</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/budget' }}>Budget</Button>
                     <Button variant="outline" onClick={() => { window.location.href = '/rolling-forecast' }}>Rolling Forecast</Button>
-                    <Button variant="outline" onClick={() => { window.location.href = '/settings/planned-items' }}>Planned Items</Button>
-                    <Button variant="outline" onClick={() => { window.location.href = '/reports' }}>Reports</Button>
-                    <Button variant="outline" onClick={() => { window.location.href = '/settings/categories' }}>Categories</Button>
-                    <Button variant="outline" onClick={() => { window.location.href = '/settings/organization' }}>Settings</Button>
+                    <Button variant="outline" onClick={() => { window.location.href = '/budget-variance' }}>Plan vs Actual</Button>
+                    <Button 
+                        variant="outline" 
+                        size="icon"
+                        className="rounded-full w-10 h-10"
+                        onClick={() => { window.location.href = '/settings/organization' }}
+                        title="Settings"
+                    >
+                        <User className="h-5 w-5" />
+                    </Button>
                 </div>
             </div>
             <div className="mb-4">
@@ -323,6 +330,7 @@ export default function Dashboard({ user }: { user?: any }) {
                 <Button variant={period === 'all' ? 'default' : 'outline'} onClick={() => setPeriod('all')}>All</Button>
                 <Button variant={period === 'year' ? 'default' : 'outline'} onClick={() => setPeriod('year')}>Year</Button>
                 <Button variant={period === 'quarter' ? 'default' : 'outline'} onClick={() => setPeriod('quarter')}>Quarter</Button>
+                <Button variant="outline" onClick={() => { window.location.href = '/settings/categories' }}>Categories</Button>
                 <div className="ml-2">
                     <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search description" className="w-56" />
                 </div>

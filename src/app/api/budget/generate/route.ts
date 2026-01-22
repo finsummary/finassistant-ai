@@ -150,16 +150,16 @@ export async function POST(req: Request) {
     const forecastMonths: string[] = []
     
     if (horizon === 'yearend') {
-      // Forecast until end of current year
+      // Forecast until end of current year (including current month)
       const currentMonth = now.getMonth()
       const currentYear = now.getFullYear()
-      for (let i = currentMonth + 1; i <= 11; i++) {
+      for (let i = currentMonth; i <= 11; i++) {
         const monthKey = `${currentYear}-${String(i + 1).padStart(2, '0')}`
         forecastMonths.push(monthKey)
       }
     } else {
-      // Forecast next 6 months
-      for (let i = 1; i <= 6; i++) {
+      // Forecast next 6 months (including current month)
+      for (let i = 0; i < 6; i++) {
         const forecastDate = new Date(now.getFullYear(), now.getMonth() + i, 1)
         const monthKey = `${forecastDate.getFullYear()}-${String(forecastDate.getMonth() + 1).padStart(2, '0')}`
         forecastMonths.push(monthKey)
@@ -176,13 +176,17 @@ export async function POST(req: Request) {
       const [year, monthNum] = month.split('-').map(Number)
       const forecastDate = new Date(year, monthNum - 1, 1)
       
+      // Calculate how many months ahead this is from the last historical month
+      // If current month is included (monthIndex 0), use 0 months ahead
+      const monthsAhead = monthIndex
+      
       allCategories.forEach(category => {
         const rates = categoryGrowthRates[category]
         if (!rates) return
 
         // Apply growth rate to last known value
-        // For month N, apply rate N times (compounding)
-        const monthsAhead = monthIndex + 1
+        // For current month (index 0), use last value directly (monthsAhead = 0)
+        // For future months, apply rate N times (compounding)
         const incomeGrowthFactor = Math.pow(1 + (rates.incomeRate / 100), monthsAhead)
         const expenseGrowthFactor = Math.pow(1 + (rates.expenseRate / 100), monthsAhead)
 

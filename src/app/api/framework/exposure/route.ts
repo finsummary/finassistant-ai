@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, successResponse } from '../../_utils'
-import { calculateTrajectory } from '../_utils'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,23 +9,46 @@ export async function GET() {
     const userId = await requireAuth()
     const supabase = await createClient()
 
-    // Get current balance and forecast
-    const trajectoryData = await calculateTrajectory(supabase, userId)
-    const { currentBalance, forecast, avgMonthlyChange } = trajectoryData
+    // Get current balance
+    const { data: transactions } = await supabase
+      .from('Transactions')
+      .select('amount')
+      .eq('user_id', userId)
 
-    // Calculate runway (months until cash <= 0)
+    let currentBalance = 0
+    transactions?.forEach((tx: any) => {
+      currentBalance += Number(tx.amount || 0)
+    })
+
+    // Get rolling forecast for cash runway
     let runway = null
-    if (avgMonthlyChange < 0) {
-      const monthsUntilZero = Math.floor(currentBalance / Math.abs(avgMonthlyChange))
-      runway = monthsUntilZero > 0 ? monthsUntilZero : 0
-    } else {
-      runway = null // Positive trajectory, no runway limit
-    }
-
-    // Check forecast for negative balances
-    const firstNegativeMonth = forecast.findIndex(f => f.balance <= 0)
-    if (firstNegativeMonth >= 0 && runway === null) {
-      runway = firstNegativeMonth + 1
+    try {
+      const forecastRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/rolling-forecast?horizon=6months`, {
+        headers: {
+          'Cookie': (await import('next/headers')).cookies().toString(),
+        },
+      })
+      if (forecastRes.ok) {
+        const forecastJson = await forecastRes.json()
+        const rollingForecast = forecastJson.data?.rollingForecast
+        
+        if (rollingForecast) {
+          const firstNegativeIndex = rollingForecast.findIndex((f: any) => f.balance <= 0)
+          if (firstNegativeIndex >= 0) {
+            runway = firstNegativeIndex + 1
+          } else {
+            const forecastMonths = rollingForecast.filter((f: any) => f.type === 'forecast')
+            if (forecastMonths.length > 0) {
+              const avgMonthlyChange = forecastMonths.reduce((sum: number, m: any) => sum + m.net, 0) / forecastMonths.length
+              if (avgMonthlyChange < 0) {
+                runway = Math.floor(currentBalance / Math.abs(avgMonthlyChange))
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Exposure] Failed to fetch rolling forecast:', e)
     }
 
     // Get upcoming large expenses (from planned expenses)
@@ -54,7 +76,7 @@ export async function GET() {
       .reverse()
       .slice(0, 5) // Top 5 largest
 
-    // Risk flags
+    // Basic risk flags (will be enhanced by AI analysis)
     const riskFlags: Array<{ type: string; severity: 'low' | 'medium' | 'high'; message: string }> = []
 
     if (runway !== null && runway <= 1) {
@@ -82,36 +104,12 @@ export async function GET() {
       }
     }
 
-    if (avgMonthlyChange < 0 && Math.abs(avgMonthlyChange) > currentBalance * 0.1) {
-      riskFlags.push({
-        type: 'burn_rate',
-        severity: 'medium',
-        message: `High monthly burn rate: ${Math.abs(avgMonthlyChange).toFixed(2)}`,
-      })
-    }
-
-    // Downside scenario (revenue -20%)
-    const downsideScenario = forecast.map(f => ({
-      month: f.month,
-      balance: f.balance - (f.income * 0.2), // Reduce income by 20%
-    }))
-
-    const downsideRunway = downsideScenario.findIndex(f => f.balance <= 0)
-    if (downsideRunway >= 0 && downsideRunway < (runway || Infinity)) {
-      riskFlags.push({
-        type: 'downside',
-        severity: 'low',
-        message: `If revenue drops 20%, runway reduces to ${downsideRunway + 1} months`,
-      })
-    }
-
     return successResponse({
       runway,
       currentBalance,
-      avgMonthlyChange,
       upcomingExpenses,
       riskFlags,
-      downsideScenario,
+      // AI analysis will be fetched separately by the client
     })
   } catch (e) {
     return errorResponse(e, 'Failed to calculate exposure data')

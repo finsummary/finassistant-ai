@@ -53,36 +53,36 @@ export default function BudgetPage() {
   // Fetch current balance and load saved budget
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true)
       try {
-        // Fetch current balance
-        const balanceRes = await fetch('/api/reports/summary?period=all', { cache: 'no-store' })
-        const balanceJson = await balanceRes.json()
+        // Fetch both in parallel for faster loading
+        const [balanceRes, budgetRes] = await Promise.all([
+          fetch('/api/reports/summary?period=all'),
+          fetch('/api/budget/load')
+        ])
+        
+        const [balanceJson, budgetJson] = await Promise.all([
+          balanceRes.json(),
+          budgetRes.json()
+        ])
+        
         if (balanceJson?.ok && balanceJson.currentBalance !== undefined) {
           setCurrentBalance(balanceJson.currentBalance)
         }
 
-        // Load saved budget
-        const budgetRes = await fetch('/api/budget/load', { cache: 'no-store' })
-        const budgetJson = await budgetRes.json()
-        console.log('[Budget Page] Load response:', budgetJson)
-        // API returns { ok: true, data: { budget: {...} } }
         const loadedBudget = budgetJson?.data?.budget || budgetJson?.budget
         if (budgetJson?.ok && loadedBudget) {
-          console.log('[Budget Page] Setting budget data:', {
-            horizon: loadedBudget.horizon,
-            forecastMonthsCount: loadedBudget.forecastMonths?.length || 0,
-            categoriesCount: Object.keys(loadedBudget.categoryGrowthRates || {}).length,
-            budgetMonthsCount: Object.keys(loadedBudget.budget || {}).length,
-          })
           setBudgetData(loadedBudget)
           setHorizon(loadedBudget.horizon || '6months')
           if (loadedBudget.generatedAt) {
             setLastSaved(new Date(loadedBudget.generatedAt))
           }
-        } else {
-          console.log('[Budget Page] No budget found or error:', budgetJson)
         }
-      } catch {}
+      } catch (e) {
+        console.error('[Budget Page] Error loading data:', e)
+      } finally {
+        setLoading(false)
+      }
     }
     fetchData()
   }, [])
@@ -696,6 +696,21 @@ export default function BudgetPage() {
     })
   }, [allCategories, budgetData])
 
+  if (loading && !budgetData) {
+    return (
+      <div className="p-4 md:p-8">
+        <div className="mb-6">
+          <div className="h-8 w-64 bg-gray-200 rounded animate-pulse mb-2"></div>
+          <div className="h-4 w-96 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+        <div className="space-y-4">
+          <div className="h-32 bg-gray-200 rounded animate-pulse"></div>
+          <div className="h-64 bg-gray-200 rounded animate-pulse"></div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
@@ -724,6 +739,12 @@ export default function BudgetPage() {
             onClick={() => setNoCents(!noCents)}
           >
             {noCents ? 'Show Cents' : 'Hide Cents'}
+          </Button>
+          <Button variant="outline" onClick={() => router.push('/settings/planned-items')}>
+            Planned Items
+          </Button>
+          <Button variant="outline" onClick={() => router.push('/budget-variance')}>
+            Plan vs Actual
           </Button>
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             Dashboard

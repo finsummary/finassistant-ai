@@ -21,8 +21,25 @@ export default function CategoriesPage() {
     try {
       const res = await fetch('/api/categories', { cache: 'no-store' })
       const json = await res.json()
-      if (json?.ok) setItems(json.rows || [])
-      else alert(`Load error: ${json?.error}`)
+      if (json?.ok) {
+        // Remove duplicates: prefer user-defined over global (same logic as Dashboard)
+        const allCats = (json.rows || []).filter((c: any) => c?.enabled !== false)
+        const uniqueCats = Array.from(
+          new Map(
+            allCats
+              .sort((a: any, b: any) => {
+                // User-defined categories first (user_id !== null), then global (user_id === null)
+                if (a.user_id && !b.user_id) return -1
+                if (!a.user_id && b.user_id) return 1
+                return 0
+              })
+              .map((c: any) => [String(c.name).toLowerCase(), c])
+          ).values()
+        )
+        setItems(uniqueCats)
+      } else {
+        alert(`Load error: ${json?.error}`)
+      }
     } finally {
       setLoading(false)
     }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireAuth, errorResponse, successResponse } from '../_utils'
 
+// Allow caching for better performance
 export const dynamic = 'force-dynamic'
 
 /**
@@ -55,24 +56,14 @@ export async function GET(req: Request) {
       actualsByMonth[month].net = actualsByMonth[month].income - actualsByMonth[month].expenses
     })
 
-    // Get Planned Income and Expenses (for both saved and generated budgets)
-    const { data: plannedIncome, error: piError } = await supabase
-      .from('PlannedIncome')
-      .select('*')
-      .eq('user_id', userId)
+    // Get Planned Income and Expenses in parallel
+    const [plannedIncomeResult, plannedExpensesResult] = await Promise.all([
+      supabase.from('PlannedIncome').select('*').eq('user_id', userId),
+      supabase.from('PlannedExpenses').select('*').eq('user_id', userId)
+    ])
 
-    if (piError) {
-      console.warn('Failed to fetch planned income:', piError)
-    }
-
-    const { data: plannedExpenses, error: peError } = await supabase
-      .from('PlannedExpenses')
-      .select('*')
-      .eq('user_id', userId)
-
-    if (peError) {
-      console.warn('Failed to fetch planned expenses:', peError)
-    }
+    const plannedIncome = plannedIncomeResult.data
+    const plannedExpenses = plannedExpensesResult.data
 
     // Try to load saved budget first
     let budgetData: any = null
@@ -173,17 +164,17 @@ export async function GET(req: Request) {
           }
         })
 
-        // First, determine forecast months
+        // First, determine forecast months (including current month)
         let tempForecastMonths: string[] = []
         if (horizon === 'yearend') {
           const currentMonthNum = now.getMonth()
           const currentYear = now.getFullYear()
-          for (let i = currentMonthNum + 1; i <= 11; i++) {
+          for (let i = currentMonthNum; i <= 11; i++) {
             const monthKey = `${currentYear}-${String(i + 1).padStart(2, '0')}`
             tempForecastMonths.push(monthKey)
           }
         } else {
-          for (let i = 1; i <= 6; i++) {
+          for (let i = 0; i < 6; i++) {
             const forecastDate = new Date(now.getFullYear(), now.getMonth() + i, 1)
             const monthKey = `${forecastDate.getFullYear()}-${String(forecastDate.getMonth() + 1).padStart(2, '0')}`
             tempForecastMonths.push(monthKey)
@@ -200,11 +191,14 @@ export async function GET(req: Request) {
           const [year, monthNum] = month.split('-').map(Number)
           const forecastDate = new Date(year, monthNum - 1, 1)
           
+          // Calculate how many months ahead this is from the last historical month
+          // If current month is included (monthIndex 0), use 0 months ahead
+          const monthsAhead = monthIndex
+          
           allCategories.forEach(category => {
             const rates = categoryGrowthRates[category]
             if (!rates) return
 
-            const monthsAhead = monthIndex + 1
             const incomeGrowthFactor = Math.pow(1 + (rates.incomeRate / 100), monthsAhead)
             const expenseGrowthFactor = Math.pow(1 + (rates.expenseRate / 100), monthsAhead)
 

@@ -59,7 +59,7 @@ export default function CashFlowPage() {
     const load = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`/api/reports/summary?period=${period}`, { cache: 'no-store' })
+        const res = await fetch(`/api/reports/summary?period=${period}`)
         const json = await res.json()
         setData(json)
       } finally {
@@ -72,7 +72,7 @@ export default function CashFlowPage() {
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const res = await fetch('/api/categories', { cache: 'no-store' })
+        const res = await fetch('/api/categories')
         const json = await res.json()
         if (json?.ok) {
           setCategories((json.rows || []).filter((c: any) => c?.enabled !== false))
@@ -85,7 +85,7 @@ export default function CashFlowPage() {
   useEffect(() => {
     const loadTrajectory = async () => {
       try {
-        const res = await fetch('/api/framework/trajectory', { cache: 'no-store' })
+        const res = await fetch('/api/framework/trajectory')
         const json = await res.json()
         if (json?.ok && json.data) {
           const { currentBalance, avgMonthlyChange, forecast } = json.data

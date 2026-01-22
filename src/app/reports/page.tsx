@@ -28,7 +28,7 @@ export default function ReportsPage() {
     const load = async () => {
       setLoading(true)
       try {
-        const res = await fetch(`/api/reports/summary?period=${period}`, { cache: 'no-store' })
+        const res = await fetch(`/api/reports/summary?period=${period}`)
         const json = await res.json()
         setData(json)
       } finally {
@@ -41,7 +41,7 @@ export default function ReportsPage() {
   useEffect(() => {
     const loadCategories = async () => {
       try {
-        const res = await fetch('/api/categories', { cache: 'no-store' })
+        const res = await fetch('/api/categories')
         const json = await res.json()
         if (json?.ok) {
           setCategories((json.rows || []).filter((c: any) => c?.enabled !== false))

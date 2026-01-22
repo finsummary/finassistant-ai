@@ -9,6 +9,16 @@ export async function GET() {
     const userId = await requireAuth()
     const supabase = await createClient()
 
+    // Get primary currency from bank accounts (use first account's currency, or default to GBP)
+    const { data: accounts } = await supabase
+      .from('BankAccounts')
+      .select('currency')
+      .eq('user_id', userId)
+      .limit(1)
+    
+    const primaryCurrency = accounts?.[0]?.currency || 'GBP'
+    const currentDate = new Date().toISOString().split('T')[0] // YYYY-MM-DD format
+
     // Get all transactions for the user
     const { data: transactions, error: txError } = await supabase
       .from('Transactions')
@@ -51,7 +61,9 @@ export async function GET() {
     let thisMonthInflow = 0
     let thisMonthOutflow = 0
     
-    const categoryBreakdown: Record<string, { income: number; expense: number }> = {}
+    // Category breakdowns for different periods
+    const categoryBreakdownAllTime: Record<string, { income: number; expense: number }> = {}
+    const categoryBreakdownYTD: Record<string, { income: number; expense: number }> = {}
 
     transactions?.forEach((tx: any) => {
       const amount = Number(tx.amount || 0)
@@ -60,8 +72,12 @@ export async function GET() {
       const txDate = new Date(tx.booked_at)
       const category = tx.category || 'Uncategorized'
 
-      if (!categoryBreakdown[category]) {
-        categoryBreakdown[category] = { income: 0, expense: 0 }
+      // Initialize category breakdowns
+      if (!categoryBreakdownAllTime[category]) {
+        categoryBreakdownAllTime[category] = { income: 0, expense: 0 }
+      }
+      if (!categoryBreakdownYTD[category]) {
+        categoryBreakdownYTD[category] = { income: 0, expense: 0 }
       }
 
       // Calculate KPI for different periods
@@ -89,8 +105,10 @@ export async function GET() {
         // Year to date (up to today)
         if (amount > 0) {
           ytdIncome += amount
+          categoryBreakdownYTD[category].income += amount
         } else {
           ytdExpenses += Math.abs(amount)
+          categoryBreakdownYTD[category].expense += Math.abs(amount)
         }
       }
 
@@ -103,11 +121,11 @@ export async function GET() {
         }
       }
 
-      // Category breakdown (all time)
+      // Category breakdown (all time) - for backward compatibility
       if (amount >= 0) {
-        categoryBreakdown[category].income += amount
+        categoryBreakdownAllTime[category].income += amount
       } else {
-        categoryBreakdown[category].expense += Math.abs(amount)
+        categoryBreakdownAllTime[category].expense += Math.abs(amount)
       }
     })
 
@@ -119,8 +137,8 @@ export async function GET() {
     const quarterNet = quarterIncome - quarterExpenses
     const ytdNet = ytdIncome - ytdExpenses
 
-    // Convert category breakdown to array and sort
-    const categoryArray = Object.entries(categoryBreakdown)
+    // Convert category breakdown to array and sort (all time - for backward compatibility)
+    const categoryArray = Object.entries(categoryBreakdownAllTime)
       .map(([name, values]) => ({
         name,
         income: values.income,
@@ -130,8 +148,29 @@ export async function GET() {
       .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
       .slice(0, 10) // Top 10 categories
 
+    // Separate categories into income and expense (YTD - Year to Date)
+    const incomeCategories = Object.entries(categoryBreakdownYTD)
+      .map(([name, values]) => ({
+        name,
+        income: values.income,
+      }))
+      .filter(cat => cat.income > 0)
+      .sort((a, b) => b.income - a.income)
+      .slice(0, 5)
+    
+    const expenseCategories = Object.entries(categoryBreakdownYTD)
+      .map(([name, values]) => ({
+        name,
+        expense: values.expense,
+      }))
+      .filter(cat => cat.expense > 0)
+      .sort((a, b) => b.expense - a.expense)
+      .slice(0, 5)
+
     return successResponse({
       currentBalance,
+      currentDate,
+      currency: primaryCurrency,
       // Main KPI metrics
       kpis: {
         month: {
@@ -162,6 +201,8 @@ export async function GET() {
         net: thisMonthNet,
       },
       categoryBreakdown: categoryArray,
+      incomeCategories,
+      expenseCategories,
     })
   } catch (e) {
     return errorResponse(e, 'Failed to calculate state data')

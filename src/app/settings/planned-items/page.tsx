@@ -287,8 +287,7 @@ export default function PlannedItemsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Planned Income & Expenses</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { window.location.href = '/dashboard' }}>Dashboard</Button>
-          <Button variant="outline" onClick={() => { window.location.href = '/framework' }}>Framework</Button>
+          <Button variant="outline" onClick={() => { window.location.href = '/budget' }}>Back to Budget</Button>
         </div>
       </div>
 
