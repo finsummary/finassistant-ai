@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, successResponse } from '../../../_utils'
+import { getCachedAnalysis, setCachedAnalysis } from '@/lib/ai-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,9 +9,25 @@ export const dynamic = 'force-dynamic'
  * AI-powered decision recommendations for CHOICE section
  * Analyzes current financial state, risks, and opportunities to suggest actionable decisions
  */
-export async function POST() {
+export async function POST(req: Request) {
   try {
     const userId = await requireAuth()
+    
+    // Check if refresh is requested
+    const body = await req.json().catch(() => ({}))
+    const forceRefresh = body?.refresh === true
+    
+    // Check cache first (unless refresh is forced)
+    if (!forceRefresh) {
+      const cached = getCachedAnalysis(userId, 'choice')
+      if (cached) {
+        return successResponse({
+          ...cached,
+          message: 'AI choice analysis (cached)',
+        })
+      }
+    }
+    
     const supabase = await createClient()
 
     // Get current balance
@@ -330,73 +347,88 @@ export async function POST() {
         })),
     }
 
-    // Check for AI provider
-    const openaiKey = process.env.OPENAI_API_KEY
-    const geminiKey = process.env.GEMINI_API_KEY
-    const provider = (process.env.AI_PROVIDER || (geminiKey ? 'gemini' : 'openai')).toLowerCase()
-
-    if (provider === 'openai' && !openaiKey && !geminiKey) {
-      // Fallback to rule-based decisions
-      return successResponse({
-        decisions: generateRuleBasedDecisions(context),
-        message: 'AI analysis unavailable. Showing rule-based recommendations.',
-      })
-    }
-
     // Build prompt for LLM
     const systemPrompt = `You are a financial advisor helping a business owner make strategic decisions about their cash flow.
 
+FOCUS: Answer ONLY "What should I do next?" - force intelligent action, nothing else.
+
+CHOICE Purpose: Force intelligent action. Choice answers: "Given reality, what is the highest-leverage move right now?"
+
+Inputs:
+- State
+- Delta
+- Trajectory
+- Exposure
+- Leak diagnosis (from above)
+
+How decisions are framed:
+Each option is evaluated by:
+- Runway impact (how many months does this add/subtract from runway?)
+- Downside risk (what's the worst case if this goes wrong?)
+- Reversibility (can this decision be undone?)
+- Optionality created (does this create future options or lock us in?)
+
+How money leaks are addressed:
+You don't "cut costs".
+You remove or reshape costs that shorten runway without improving trajectory or reducing exposure.
+
 You have access to comprehensive financial data from four framework sections:
 
-1. **STATE** - Current financial position (balance, month-to-date, year-to-date)
-2. **DELTA** - Changes from previous month (income/expense changes, trends)
-3. **TRAJECTORY** - Rolling forecast showing actual + projected cash flow
-4. **EXPOSURE** - Risk assessment (runway, dependencies, upcoming expenses)
+1. **STATE** - Current financial position (balance, month-to-date, year-to-date) - use this to understand WHERE they are now
+2. **DELTA** - Changes from previous month (income/expense changes) - use this to understand WHAT CHANGED
+3. **TRAJECTORY** - Rolling forecast showing actual + projected cash flow - use this to understand WHERE they are HEADING
+4. **EXPOSURE** - Risk assessment (runway, dependencies, upcoming expenses) - use this to understand WHAT COULD BREAK
 
-Based on ALL this information, suggest 3-5 specific, actionable decisions the business owner should consider.
+DO:
+- Provide 3-5 specific, actionable recommendations based on ALL four sections
+- Evaluate each decision by: runway impact, downside risk, reversibility, optionality created
+- Prioritize recommendations based on highest leverage (biggest impact on runway with acceptable risk)
+- Reference specific data from STATE, DELTA, TRAJECTORY, and EXPOSURE in your rationale
+- Make recommendations specific and actionable (not generic advice)
+- Focus on removing or reshaping costs that shorten runway without improving trajectory or reducing exposure
+- Consider the interplay between all sections
 
-Each decision should:
-- Address specific issues or opportunities identified in the data
-- Be prioritized based on urgency and impact
-- Consider the full financial picture (not just one metric)
-- Be specific and actionable (not generic advice)
+DO NOT:
+- Describe current state in detail (that's for STATE)
+- Analyze what changed (that's for DELTA)
+- Make predictions or forecasts (that's for TRAJECTORY)
+- Identify risks (that's for EXPOSURE)
+- Provide generic advice without specific actions
+- Simply "cut costs" - instead, remove or reshape costs that shorten runway without improving trajectory
+
+Output format:
+"This month, priority is reducing fixed costs that reduce runway fastest under stress while stabilising revenue above £X."
+
+Choice is narrow, specific, and time-bound.
 
 Each decision must have:
 - A clear, specific description (what exactly to do)
 - Cash impact (positive for inflow, negative for outflow, 0 for neutral/setting aside)
-- Risk level (low, medium, high)
+- Runway impact (how many months this adds/subtracts from runway)
+- Downside risk (low, medium, high)
 - Reversibility (reversible, partially_reversible, irreversible)
+- Optionality (creates_options, neutral, locks_in)
 - Timeframe (immediate = act now, short_term = within 1-3 months, long_term = 3+ months)
-- Brief rationale explaining why this decision makes sense given their STATE, DELTA, TRAJECTORY, and EXPOSURE
-
-Priority considerations:
-1. If EXPOSURE shows risks (short runway, dependencies), prioritize risk mitigation
-2. If DELTA shows declining trends, address root causes
-3. If TRAJECTORY shows negative forecast months, plan for those
-4. If STATE shows healthy cash, consider strategic opportunities
-5. Analyze categoryGrowthRates to identify:
-   - Categories with unsustainable high growth rates
-   - Categories with declining growth that need attention
-   - Opportunities to optimize categories with high expense growth
-   - Revenue categories that could be accelerated
-6. Always consider the interplay between all sections
+- Brief rationale explaining how this addresses specific issues from STATE/DELTA/TRAJECTORY/EXPOSURE and why it's the highest-leverage move
 
 Return a JSON object with this structure:
 {
   "decisions": [
     {
-      "description": "Specific, actionable decision (e.g., 'Negotiate payment terms with BigvClient to receive 50% upfront instead of single payment in June')",
+      "description": "Specific, actionable decision (e.g., 'Negotiate payment terms with BigClient to receive 50% upfront instead of single payment in June')",
       "cashImpact": number (e.g., 250000 for receiving half upfront, -5000 for reducing expenses, 0 for setting aside reserves),
-      "risk": "low" | "medium" | "high",
+      "runwayImpact": number (e.g., +3 for adding 3 months to runway, -1 for reducing runway by 1 month),
+      "downsideRisk": "low" | "medium" | "high",
       "reversibility": "reversible" | "partially_reversible" | "irreversible",
+      "optionality": "creates_options" | "neutral" | "locks_in",
       "timeframe": "immediate" | "short_term" | "long_term",
-      "rationale": "Explain how this addresses specific issues from STATE/DELTA/TRAJECTORY/EXPOSURE"
+      "rationale": "Explain how this addresses specific issues from STATE/DELTA/TRAJECTORY/EXPOSURE and why it's the highest-leverage move"
     }
   ],
-  "summary": "Brief 2-3 sentence summary of the overall recommended strategy based on all framework sections"
+  "summary": "Brief 2-3 sentence summary, e.g., 'This month, priority is reducing fixed costs that reduce runway fastest under stress while stabilising revenue above £X.'"
 }
 
-Be specific, data-driven, and actionable. Reference actual numbers, dates, and trends from the context.`
+Be specific, data-driven, and actionable. Reference actual numbers, dates, and trends from the context. Focus ONLY on recommendations.`
 
     const userPrompt = `Financial Context:
 ${JSON.stringify(context, null, 2)}
@@ -405,83 +437,40 @@ Based on this financial situation, what specific decisions should the business o
 
     let analysis: any = null
     let error: any = null
+    let usedProvider: string | null = null
 
-    // Try OpenAI first
-    if (provider === 'openai' && openaiKey) {
-      try {
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openaiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.7,
-            max_tokens: 2000,
-            response_format: { type: 'json_object' },
-          }),
-        })
-
-        const data = await resp.json()
-        if (!resp.ok) throw new Error(data.error?.message || 'OpenAI API error')
-        
-        const responseText = data.choices?.[0]?.message?.content || '{}'
-        analysis = JSON.parse(responseText)
-      } catch (e: any) {
-        error = e
-        console.error('[Choice Analyze] OpenAI error:', e)
-      }
-    }
-
-    // Fallback to Gemini
-    if (!analysis && geminiKey) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiKey}`
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `${systemPrompt}\n\n${userPrompt}\n\nReturn only valid JSON, no markdown formatting.`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 2000,
-              responseMimeType: 'application/json',
-            },
-          }),
-        })
-
-        const data = await resp.json()
-        if (!resp.ok) throw new Error(data.error?.message || 'Gemini API error')
-        
-        const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-        analysis = JSON.parse(responseText)
-      } catch (e: any) {
-        error = e
-        console.error('[Choice Analyze] Gemini error:', e)
-      }
-    }
-
-    // Fallback to rule-based if AI fails
-    if (!analysis) {
-      return successResponse({
-        decisions: generateRuleBasedDecisions(context),
-        message: error ? `AI analysis failed: ${error.message}. Showing rule-based recommendations.` : 'AI analysis unavailable.',
+    // Try AI providers with automatic fallback
+    try {
+      const { callAI } = await import('@/lib/ai-call')
+      const { result, provider } = await callAI({
+        systemPrompt,
+        userPrompt,
+        maxTokens: 2000,
+        temperature: 0.7,
+        section: 'choice',
       })
+      analysis = result
+      usedProvider = provider
+    } catch (e: any) {
+      error = e
+      console.error('[Choice Analyze] AI call failed:', e)
     }
 
-    return successResponse({
+    const result = !analysis ? {
+      decisions: generateRuleBasedDecisions(context),
+    } : {
       decisions: analysis.decisions || [],
       summary: analysis.summary || null,
-      message: 'AI decision recommendations generated',
+    }
+    
+    // Cache the result (both AI and rule-based)
+    setCachedAnalysis(userId, 'choice', result)
+    
+    return successResponse({
+      ...result,
+      message: !analysis 
+        ? (error ? `AI analysis failed: ${error.message}. Showing rule-based recommendations.` : 'AI analysis unavailable.')
+        : `AI decision recommendations generated${usedProvider ? ` (${usedProvider})` : ''}`,
     })
   } catch (e) {
     return errorResponse(e, 'Failed to analyze choice decisions')

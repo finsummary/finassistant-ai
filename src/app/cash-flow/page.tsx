@@ -346,13 +346,6 @@ export default function CashFlowPage() {
           >
             All
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => setNoCents(!noCents)}
-          >
-            {noCents ? 'Show Cents' : 'Hide Cents'}
-          </Button>
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             Dashboard
           </Button>

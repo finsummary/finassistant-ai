@@ -11,10 +11,11 @@ import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
+
 type RollingForecastData = {
   currentBalance: number
   currentMonth: string
-  horizon: '6months' | 'yearend'
+  horizon: 'yearend'
   rollingForecast: Array<{
     month: string
     type: 'actual' | 'forecast'
@@ -36,7 +37,7 @@ export default function RollingForecastPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RollingForecastData | null>(null)
-  const [horizon, setHorizon] = useState<'6months' | 'yearend'>('6months')
+  const [horizon] = useState<'yearend'>('yearend')
   const [noCents, setNoCents] = useState(true)
 
   const numberFmt = useMemo(() => new Intl.NumberFormat('en-US', { 
@@ -73,34 +74,89 @@ export default function RollingForecastPage() {
 
   // Calculate Cash Runway
   const cashRunway = useMemo(() => {
-    if (!data || data.currentBalance === 0) return null
+    if (!data || !data.rollingForecast || data.rollingForecast.length === 0) return null
 
-    const { currentBalance, rollingForecast } = data
+    const { rollingForecast } = data
 
+    // Get the last actual balance (starting point for forecast)
+    const actualMonths = rollingForecast.filter(f => f.type === 'actual')
+    const forecastMonths = rollingForecast.filter(f => f.type === 'forecast')
+    
+    if (forecastMonths.length === 0) return null
+
+    // Starting balance is the last actual balance, or first forecast balance if no actuals
+    const startingBalance = actualMonths.length > 0 
+      ? actualMonths[actualMonths.length - 1].balance 
+      : forecastMonths[0]?.balance || 0
+
+    // Don't count current negative month - look at future forecast months only
+    // If starting balance is negative, we still want to see when it will recover or get worse
     let runway: number | null = null
     let runwayMessage: string = ''
     let runwayColor: string = 'text-gray-500'
     let negativeMonth: string | null = null
 
-    // Find first month where balance goes negative
-    const firstNegativeIndex = rollingForecast.findIndex(f => f.balance <= 0)
-    if (firstNegativeIndex >= 0) {
-      runway = firstNegativeIndex + 1
-      negativeMonth = rollingForecast[firstNegativeIndex].month
-    }
-
-    // If no negative month found, calculate based on average monthly change
-    if (runway === null) {
-      const forecastMonths = rollingForecast.filter(f => f.type === 'forecast')
-      if (forecastMonths.length > 0) {
-        const avgMonthlyChange = forecastMonths.reduce((sum, m) => sum + m.net, 0) / forecastMonths.length
-        if (avgMonthlyChange < 0) {
-          runway = Math.floor(currentBalance / Math.abs(avgMonthlyChange))
+    // Find first forecast month where balance goes negative (if starting positive)
+    // Or find first forecast month where balance goes positive (if starting negative)
+    if (startingBalance > 0) {
+      // Starting positive - find when it goes negative
+      for (let i = 0; i < forecastMonths.length; i++) {
+        const month = forecastMonths[i]
+        
+        if (month.balance <= 0) {
+          runway = i + 1 // Months until zero (1-based, from start of forecast)
+          negativeMonth = month.month
+          break
         }
+      }
+    } else {
+      // Starting negative - find when it recovers to positive, or stays negative
+      // For negative starting balance, runway is 0 (already negative)
+      runway = 0
+      // Find the first forecast month to show when it might recover
+      for (let i = 0; i < forecastMonths.length; i++) {
+        const month = forecastMonths[i]
+        if (month.balance > 0) {
+          // Found recovery month
+          break
+        }
+        negativeMonth = month.month
       }
     }
 
+    // If no negative month found, calculate based on average monthly burn
     if (runway === null) {
+      const avgMonthlyBurn = forecastMonths.reduce((sum, m) => {
+        // Only count months with negative net (burn)
+        return sum + Math.max(0, -m.net)
+      }, 0) / forecastMonths.length
+      
+      if (avgMonthlyBurn > 0) {
+        runway = Math.floor(startingBalance / avgMonthlyBurn)
+      } else {
+        // Positive cash flow - runway is infinite
+        runway = null
+      }
+    }
+
+    if (startingBalance <= 0) {
+      // Already negative - show recovery or worsening
+      if (runway === 0) {
+        // Check if forecast shows recovery
+        const firstPositiveMonth = forecastMonths.find(m => m.balance > 0)
+        if (firstPositiveMonth) {
+          const recoveryIndex = forecastMonths.indexOf(firstPositiveMonth)
+          runwayMessage = `Recovers in ${recoveryIndex + 1} months`
+          runwayColor = 'text-green-600'
+        } else {
+          runwayMessage = 'Stays negative'
+          runwayColor = 'text-red-600'
+        }
+      } else {
+        runwayMessage = 'Stays negative'
+        runwayColor = 'text-red-600'
+      }
+    } else if (runway === null) {
       runwayMessage = 'Positive cash flow trajectory (∞)'
       runwayColor = 'text-green-600'
     } else if (runway <= 1) {
@@ -125,136 +181,176 @@ export default function RollingForecastPage() {
     }
   }, [data])
 
+  // Find current month index for vertical line
+  const currentMonthIndex = useMemo(() => {
+    if (!data) return -1
+    return data.rollingForecast.findIndex(f => f.month === data.currentMonth)
+  }, [data])
+
   // Chart data
   const chartData = useMemo(() => {
     if (!data) return { labels: [], datasets: [] }
 
     const labels = data.rollingForecast.map(f => formatMonth(f.month))
+    const balances = data.rollingForecast.map(f => f.balance)
+    const types = data.rollingForecast.map(f => f.type)
     
-    // Find where forecast starts
+    // Find where forecast starts (for styling)
     const forecastStartIndex = data.rollingForecast.findIndex(f => f.type === 'forecast')
     
-    // Find where balance goes negative (first negative value)
-    let negativeIndex = -1
-    for (let i = 0; i < data.rollingForecast.length; i++) {
-      if (data.rollingForecast[i].balance < 0 && negativeIndex === -1) {
-        negativeIndex = i
-        break
-      }
-    }
+    // Create a single continuous line for all months
+    // Use segment styling to change color based on value and type
+    const datasets: any[] = []
 
-    // Create actual data - continuous line, split at negative transition for color
-    const actualData = data.rollingForecast.map(f => f.type === 'actual' ? f.balance : null)
-    const actualPositive = actualData.map((val, idx) => {
-      if (val === null) return null
-      // Show positive values up to (but not including) transition point
-      if (negativeIndex >= 0 && idx >= negativeIndex) return null
-      return val > 0 ? val : null
+    // Main balance line - continuous across all months
+    datasets.push({
+      label: 'Cash Balance',
+      data: balances,
+      borderColor: (context: any) => {
+        if (!context.parsed || context.parsed.y === null || context.parsed.y === undefined) return '#9ca3af'
+        const value = context.parsed.y
+        const index = context.dataIndex
+        const isForecast = index >= forecastStartIndex && forecastStartIndex >= 0
+        // Green for positive, red for negative
+        if (value >= 0) {
+          return isForecast ? '#3b82f6' : '#16a34a' // Blue for forecast positive, green for actual positive
+        } else {
+          return '#dc2626' // Red for negative (both actual and forecast)
+        }
+      },
+      backgroundColor: (context: any) => {
+        if (!context.parsed || context.parsed.y === null || context.parsed.y === undefined) {
+          return '#9ca3af20'
+        }
+        if (!context.chart || !context.chart.ctx) {
+          return '#9ca3af20'
+        }
+        const ctx = context.chart.ctx
+        const gradient = ctx.createLinearGradient(0, 0, 0, 400)
+        const value = context.parsed.y
+        const index = context.dataIndex
+        const isForecast = index >= forecastStartIndex && forecastStartIndex >= 0
+        if (value >= 0) {
+          if (isForecast) {
+            gradient.addColorStop(0, '#3b82f680')
+            gradient.addColorStop(1, '#3b82f600')
+          } else {
+            gradient.addColorStop(0, '#16a34a80')
+            gradient.addColorStop(1, '#16a34a00')
+          }
+        } else {
+          gradient.addColorStop(0, '#dc262680')
+          gradient.addColorStop(1, '#dc262600')
+        }
+        return gradient
+      },
+      fill: {
+        target: 'origin', // Fill to the zero line
+        above: '#16a34a80', // Green for positive area
+        below: '#dc262680', // Red for negative area
+      },
+      borderDash: (context: any) => {
+        if (context.dataIndex === undefined || context.dataIndex === null) {
+          return []
+        }
+        const index = context.dataIndex
+        // Dashed line for forecast months
+        if (index >= forecastStartIndex && forecastStartIndex >= 0) {
+          return [5, 5]
+        }
+        return []
+      },
+      tension: 0.3,
+      pointRadius: 4,
+      pointBackgroundColor: (context: any) => {
+        if (!context.parsed || context.parsed.y === null || context.parsed.y === undefined) return '#9ca3af'
+        const value = context.parsed.y
+        const index = context.dataIndex
+        const isForecast = index >= forecastStartIndex && forecastStartIndex >= 0
+        if (value >= 0) {
+          return isForecast ? '#3b82f6' : '#16a34a'
+        } else {
+          return '#dc2626'
+        }
+      },
+      spanGaps: true, // Allow spanning gaps to connect lines smoothly
     })
-    const actualNegative = actualData.map((val, idx) => {
-      if (val === null) return null
-      // Show negative values from transition point onwards
-      if (negativeIndex >= 0 && idx < negativeIndex) return null
-      return val < 0 ? val : (idx === negativeIndex && val === 0 ? 0 : null)
+
+    // Zero line
+    datasets.push({
+      label: 'Zero Line',
+      data: labels.map(() => 0),
+      borderColor: '#9ca3af',
+      borderDash: [5, 5],
+      pointRadius: 0,
+      fill: false,
+      tension: 0,
+    })
+
+    return {
+      labels,
+      datasets,
+      currentMonthIndex,
+    }
+  }, [data, currentMonthIndex])
+
+  // Trends chart data - Total Income, Total Expenses, Cash at End
+  const trendsChartData = useMemo(() => {
+    if (!data) return { labels: [], datasets: [] }
+
+    const labels = data.rollingForecast.map(f => formatMonth(f.month))
+    
+    // Calculate cumulative totals
+    let cumulativeIncome = 0
+    let cumulativeExpenses = 0
+    
+    const incomeData = data.rollingForecast.map(f => {
+      cumulativeIncome += f.income
+      return cumulativeIncome
     })
     
-    // Add 0 point before first negative for smooth connection
-    if (negativeIndex >= 0 && negativeIndex > 0 && actualData[negativeIndex - 1] !== null) {
-      actualNegative[negativeIndex - 1] = 0
-    }
-
-    // Create forecast data - continuous line, split at negative transition for color
-    const forecastData = data.rollingForecast.map(f => f.type === 'forecast' ? f.balance : null)
-    const forecastPositive = forecastData.map((val, idx) => {
-      if (val === null) return null
-      // Show positive values up to (but not including) transition point
-      if (negativeIndex >= 0 && idx >= negativeIndex) return null
-      return val > 0 ? val : null
-    })
-    const forecastNegative = forecastData.map((val, idx) => {
-      if (val === null) return null
-      // Show negative values from transition point onwards
-      if (negativeIndex >= 0 && idx < negativeIndex) return null
-      return val < 0 ? val : (idx === negativeIndex && val === 0 ? 0 : null)
+    const expensesData = data.rollingForecast.map(f => {
+      cumulativeExpenses += f.expenses
+      return cumulativeExpenses
     })
     
-    // Add 0 point before first negative for smooth connection
-    if (negativeIndex >= 0 && negativeIndex > 0 && forecastData[negativeIndex - 1] !== null) {
-      forecastNegative[negativeIndex - 1] = 0
-    }
+    const balanceData = data.rollingForecast.map(f => f.balance)
+
+    // Find current month index
+    const currentMonthIdx = data.rollingForecast.findIndex(f => f.month === data.currentMonth)
 
     return {
       labels,
       datasets: [
         {
-          label: 'Actual Balance (Positive)',
-          data: actualPositive,
+          label: 'Total Income',
+          data: incomeData,
           borderColor: '#16a34a',
-          backgroundColor: (context: any) => {
-            const ctx = context.chart.ctx
-            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
-            gradient.addColorStop(0, '#16a34a80')
-            gradient.addColorStop(1, '#16a34a00')
-            return gradient
-          },
-          fill: true,
+          backgroundColor: '#16a34a20',
+          fill: false,
           tension: 0.3,
-          pointRadius: 4,
+          pointRadius: 3,
           pointBackgroundColor: '#16a34a',
-          spanGaps: true, // Span gaps to connect actual and forecast segments
         },
         {
-          label: 'Actual Balance (Negative)',
-          data: actualNegative,
+          label: 'Total Expenses',
+          data: expensesData,
           borderColor: '#dc2626',
-          backgroundColor: (context: any) => {
-            const ctx = context.chart.ctx
-            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
-            gradient.addColorStop(0, '#dc262680')
-            gradient.addColorStop(1, '#dc262600')
-            return gradient
-          },
-          fill: true,
+          backgroundColor: '#dc262620',
+          fill: false,
           tension: 0.3,
-          pointRadius: 4,
+          pointRadius: 3,
           pointBackgroundColor: '#dc2626',
-          spanGaps: false, // Don't span gaps
         },
         {
-          label: 'Forecast Balance (Positive)',
-          data: forecastPositive,
+          label: 'Cash at End',
+          data: balanceData,
           borderColor: '#3b82f6',
-          borderDash: [5, 5],
-          backgroundColor: (context: any) => {
-            const ctx = context.chart.ctx
-            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
-            gradient.addColorStop(0, '#3b82f680')
-            gradient.addColorStop(1, '#3b82f600')
-            return gradient
-          },
-          fill: true,
+          backgroundColor: '#3b82f620',
+          fill: false,
           tension: 0.3,
-          pointRadius: 4,
+          pointRadius: 3,
           pointBackgroundColor: '#3b82f6',
-          spanGaps: false, // Don't span gaps
-        },
-        {
-          label: 'Forecast Balance (Negative)',
-          data: forecastNegative,
-          borderColor: '#dc2626',
-          borderDash: [5, 5],
-          backgroundColor: (context: any) => {
-            const ctx = context.chart.ctx
-            const gradient = ctx.createLinearGradient(0, 0, 0, 400)
-            gradient.addColorStop(0, '#dc262680')
-            gradient.addColorStop(1, '#dc262600')
-            return gradient
-          },
-          fill: true,
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: '#dc2626',
-          spanGaps: false, // Don't span gaps
         },
         {
           label: 'Zero Line',
@@ -266,36 +362,86 @@ export default function RollingForecastPage() {
           tension: 0,
         },
       ],
+      currentMonthIndex: currentMonthIdx,
     }
-  }, [data])
+  }, [data, currentMonthIndex])
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        display: true,
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Rolling Forecast: Actual vs Budget',
-      },
-      tooltip: {
-        callbacks: {
-          label: function(context: any) {
-            let label = context.dataset.label || ''
-            if (label) {
-              label += ': '
+  const chartOptions = useMemo(() => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top' as const,
+        },
+        title: {
+          display: true,
+          text: 'Rolling Forecast: Actual vs Budget',
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context: any) {
+              let label = context.dataset.label || ''
+              if (label) {
+                label += ': '
+              }
+              if (context.parsed.y !== null) {
+                label += format(context.parsed.y)
+              }
+              return label
             }
-            if (context.parsed.y !== null) {
-              label += format(context.parsed.y)
-            }
-            return label
           }
-        }
-      }
-    },
+        },
+      },
+      scales: {
+        x: {
+          title: {
+            display: true,
+            text: 'Month',
+          },
+        },
+        y: {
+          title: {
+            display: true,
+            text: 'Balance',
+          },
+          beginAtZero: false,
+          ticks: {
+            callback: function(value: any) {
+              return format(value)
+            }
+          }
+        },
+      },
+    }), [format])
+
+  const trendsChartOptions = useMemo(() => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top' as const,
+        },
+        title: {
+          display: true,
+          text: 'Trends: Total Income, Total Expenses, and Cash at End',
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context: any) {
+              let label = context.dataset.label || ''
+              if (label) {
+                label += ': '
+              }
+              if (context.parsed.y !== null) {
+                label += format(context.parsed.y)
+              }
+              return label
+            }
+          }
+        },
+      },
     scales: {
       x: {
         title: {
@@ -306,9 +452,9 @@ export default function RollingForecastPage() {
       y: {
         title: {
           display: true,
-          text: 'Balance',
+          text: 'Amount',
         },
-        beginAtZero: false,
+        beginAtZero: true,
         ticks: {
           callback: function(value: any) {
             return format(value)
@@ -316,7 +462,7 @@ export default function RollingForecastPage() {
         }
       },
     },
-  }
+    }), [format])
 
   if (loading && !data) {
     return (
@@ -368,27 +514,6 @@ export default function RollingForecastPage() {
           <p className="text-sm text-muted-foreground">Combined view of actual transactions and budget forecast</p>
         </div>
         <div className="flex gap-2">
-          <Button 
-            variant={horizon === '6months' ? 'default' : 'outline'} 
-            size="sm"
-            onClick={() => setHorizon('6months')}
-          >
-            6 Months
-          </Button>
-          <Button 
-            variant={horizon === 'yearend' ? 'default' : 'outline'} 
-            size="sm"
-            onClick={() => setHorizon('yearend')}
-          >
-            Until Year End
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => setNoCents(!noCents)}
-          >
-            {noCents ? 'Show Cents' : 'Hide Cents'}
-          </Button>
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             Dashboard
           </Button>
@@ -510,7 +635,70 @@ export default function RollingForecastPage() {
           </CardHeader>
           <CardContent>
             <div style={{ height: '400px' }}>
-              <Line data={chartData} options={chartOptions} />
+              <Line 
+                data={chartData} 
+                options={chartOptions}
+                plugins={[{
+                  id: 'verticalLine',
+                  afterDraw: (chart: any) => {
+                    if (currentMonthIndex < 0) return
+                    const ctx = chart.ctx
+                    const chartArea = chart.chartArea
+                    const meta = chart.getDatasetMeta(0)
+                    if (meta && meta.data[currentMonthIndex]) {
+                      const x = meta.data[currentMonthIndex].x
+                      ctx.save()
+                      ctx.strokeStyle = '#f59e0b'
+                      ctx.lineWidth = 2
+                      ctx.setLineDash([5, 5])
+                      ctx.beginPath()
+                      ctx.moveTo(x, chartArea.top)
+                      ctx.lineTo(x, chartArea.bottom)
+                      ctx.stroke()
+                      ctx.restore()
+                    }
+                  }
+                }]}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Trends Chart */}
+      {trendsChartData.labels.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Financial Trends</CardTitle>
+            <CardDescription>Total Income, Total Expenses, and Cash at End over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div style={{ height: '400px' }}>
+              <Line 
+                data={trendsChartData} 
+                options={trendsChartOptions}
+                plugins={[{
+                  id: 'trendsVerticalLine',
+                  afterDraw: (chart: any) => {
+                    if (currentMonthIndex < 0) return
+                    const ctx = chart.ctx
+                    const chartArea = chart.chartArea
+                    const meta = chart.getDatasetMeta(0)
+                    if (meta && meta.data[currentMonthIndex]) {
+                      const x = meta.data[currentMonthIndex].x
+                      ctx.save()
+                      ctx.strokeStyle = '#f59e0b'
+                      ctx.lineWidth = 2
+                      ctx.setLineDash([5, 5])
+                      ctx.beginPath()
+                      ctx.moveTo(x, chartArea.top)
+                      ctx.lineTo(x, chartArea.bottom)
+                      ctx.stroke()
+                      ctx.restore()
+                    }
+                  }
+                }]}
+              />
             </div>
           </CardContent>
         </Card>

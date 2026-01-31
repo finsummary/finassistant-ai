@@ -43,6 +43,10 @@ export async function GET() {
     
     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
     const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    
+    // Calculate last 3 months for average revenue/costs (STATE requirement)
+    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+    const monthlyData: Array<{ month: string; revenue: number; costs: number; net: number }> = []
 
     // Calculate current cash balance (sum of all transactions)
     let currentBalance = 0
@@ -64,6 +68,9 @@ export async function GET() {
     // Category breakdowns for different periods
     const categoryBreakdownAllTime: Record<string, { income: number; expense: number }> = {}
     const categoryBreakdownYTD: Record<string, { income: number; expense: number }> = {}
+    
+    // Group transactions by month for last 3 months calculation
+    const monthlyBreakdown: Record<string, { revenue: number; costs: number }> = {}
 
     transactions?.forEach((tx: any) => {
       const amount = Number(tx.amount || 0)
@@ -71,6 +78,7 @@ export async function GET() {
 
       const txDate = new Date(tx.booked_at)
       const category = tx.category || 'Uncategorized'
+      const monthKey = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}`
 
       // Initialize category breakdowns
       if (!categoryBreakdownAllTime[category]) {
@@ -78,6 +86,18 @@ export async function GET() {
       }
       if (!categoryBreakdownYTD[category]) {
         categoryBreakdownYTD[category] = { income: 0, expense: 0 }
+      }
+      
+      // Track monthly data for last 3 months (STATE requirement)
+      if (txDate >= threeMonthsAgo && txDate < thisMonth) {
+        if (!monthlyBreakdown[monthKey]) {
+          monthlyBreakdown[monthKey] = { revenue: 0, costs: 0 }
+        }
+        if (amount > 0) {
+          monthlyBreakdown[monthKey].revenue += amount
+        } else {
+          monthlyBreakdown[monthKey].costs += Math.abs(amount)
+        }
       }
 
       // Calculate KPI for different periods
@@ -167,6 +187,31 @@ export async function GET() {
       .sort((a, b) => b.expense - a.expense)
       .slice(0, 5)
 
+    // Calculate STATE metrics: average monthly revenue/costs from last 3 months
+    const last3MonthsData = Object.entries(monthlyBreakdown)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-3) // Last 3 complete months
+    
+    let avgMonthlyRevenue = 0
+    let avgMonthlyCosts = 0
+    if (last3MonthsData.length > 0) {
+      const totalRevenue = last3MonthsData.reduce((sum, [, data]) => sum + data.revenue, 0)
+      const totalCosts = last3MonthsData.reduce((sum, [, data]) => sum + data.costs, 0)
+      avgMonthlyRevenue = totalRevenue / last3MonthsData.length
+      avgMonthlyCosts = totalCosts / last3MonthsData.length
+    }
+    
+    // Net monthly burn (negative if spending more than earning)
+    const netMonthlyBurn = avgMonthlyCosts - avgMonthlyRevenue
+    
+    // Calculate runway (months until cash runs out)
+    let runway: number | null = null
+    if (netMonthlyBurn > 0 && currentBalance > 0) {
+      runway = Math.floor(currentBalance / netMonthlyBurn)
+    } else if (netMonthlyBurn <= 0) {
+      runway = null // Positive cash flow, no runway concern
+    }
+
     return successResponse({
       currentBalance,
       currentDate,
@@ -203,6 +248,13 @@ export async function GET() {
       categoryBreakdown: categoryArray,
       incomeCategories,
       expenseCategories,
+      // STATE-specific metrics (facts only)
+      state: {
+        avgMonthlyRevenue,
+        avgMonthlyCosts,
+        netMonthlyBurn,
+        runway,
+      },
     })
   } catch (e) {
     return errorResponse(e, 'Failed to calculate state data')

@@ -17,6 +17,15 @@ export async function GET() {
     const now = new Date()
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
+    // Get primary currency from bank accounts (use first account's currency, or default to GBP)
+    const { data: accounts } = await supabase
+      .from('BankAccounts')
+      .select('currency')
+      .eq('user_id', userId)
+      .limit(1)
+    
+    const primaryCurrency = accounts?.[0]?.currency || 'GBP'
+
     // Load saved budget
     const { data: savedBudget, error: budgetError } = await supabase
       .from('Budget')
@@ -41,60 +50,61 @@ export async function GET() {
     const plannedIncome = plannedIncomeResult.data
     const plannedExpenses = plannedExpensesResult.data
 
-    // Merge Planned Items into budget (same logic as load endpoint)
-    // Only add if not already present in saved budget (to avoid duplication)
+    // Always recalculate Planned Items from current PlannedIncome and PlannedExpenses tables
+    // This ensures that deleted/updated planned items are reflected in the budget
     const budget = { ...savedBudget.budget_data } || {}
     const forecastMonths = savedBudget.forecast_months || []
 
     forecastMonths.forEach(month => {
-      // Check if Planned Items already exist in saved budget
-      const hasPlannedItems = budget[month] && budget[month]['Planned Items']
+      const [year, monthNum] = month.split('-').map(Number)
+      const forecastDate = new Date(year, monthNum - 1, 1)
       
-      // Only add Planned Items if they don't already exist in saved budget
-      if (!hasPlannedItems) {
-        const [year, monthNum] = month.split('-').map(Number)
-        const forecastDate = new Date(year, monthNum - 1, 1)
+      // Calculate Planned Income for this month from current PlannedIncome table
+      let plannedIncomeForMonth = 0
+      plannedIncome?.forEach((pi: any) => {
+        const piDate = new Date(pi.expected_date)
+        const amount = Number(pi.amount || 0)
         
-        let plannedIncomeForMonth = 0
-        plannedIncome?.forEach((pi: any) => {
-          const piDate = new Date(pi.expected_date)
-          const amount = Number(pi.amount || 0)
-          
-          if (pi.recurrence === 'monthly') {
-            if (forecastDate >= new Date(piDate.getFullYear(), piDate.getMonth(), 1)) {
-              plannedIncomeForMonth += amount
-            }
-          } else if (pi.recurrence === 'one-off') {
-            if (piDate.getFullYear() === forecastDate.getFullYear() &&
-                piDate.getMonth() === forecastDate.getMonth()) {
-              plannedIncomeForMonth += amount
-            }
+        if (pi.recurrence === 'monthly') {
+          if (forecastDate >= new Date(piDate.getFullYear(), piDate.getMonth(), 1)) {
+            plannedIncomeForMonth += amount
           }
-        })
-
-        let plannedExpensesForMonth = 0
-        plannedExpenses?.forEach((pe: any) => {
-          const peDate = new Date(pe.expected_date)
-          const amount = Number(pe.amount || 0)
-          
-          if (pe.recurrence === 'monthly') {
-            if (forecastDate >= new Date(peDate.getFullYear(), peDate.getMonth(), 1)) {
-              plannedExpensesForMonth += amount
-            }
-          } else if (pe.recurrence === 'one-off') {
-            if (peDate.getFullYear() === forecastDate.getFullYear() &&
-                peDate.getMonth() === forecastDate.getMonth()) {
-              plannedExpensesForMonth += amount
-            }
+        } else if (pi.recurrence === 'one-off') {
+          if (piDate.getFullYear() === forecastDate.getFullYear() &&
+              piDate.getMonth() === forecastDate.getMonth()) {
+            plannedIncomeForMonth += amount
           }
-        })
-
-        if (plannedIncomeForMonth > 0 || plannedExpensesForMonth > 0) {
-          if (!budget[month]) {
-            budget[month] = {}
-          }
-          budget[month]['Planned Items'] = { income: plannedIncomeForMonth, expenses: plannedExpensesForMonth }
         }
+      })
+
+      // Calculate Planned Expenses for this month from current PlannedExpenses table
+      let plannedExpensesForMonth = 0
+      plannedExpenses?.forEach((pe: any) => {
+        const peDate = new Date(pe.expected_date)
+        const amount = Number(pe.amount || 0)
+        
+        if (pe.recurrence === 'monthly') {
+          if (forecastDate >= new Date(peDate.getFullYear(), peDate.getMonth(), 1)) {
+            plannedExpensesForMonth += amount
+          }
+        } else if (pe.recurrence === 'one-off') {
+          if (peDate.getFullYear() === forecastDate.getFullYear() &&
+              peDate.getMonth() === forecastDate.getMonth()) {
+            plannedExpensesForMonth += amount
+          }
+        }
+      })
+
+      // Always update Planned Items in budget (remove old values if no planned items exist)
+      if (!budget[month]) {
+        budget[month] = {}
+      }
+      
+      if (plannedIncomeForMonth > 0 || plannedExpensesForMonth > 0) {
+        budget[month]['Planned Items'] = { income: plannedIncomeForMonth, expenses: plannedExpensesForMonth }
+      } else {
+        // Remove Planned Items if none exist for this month
+        delete budget[month]['Planned Items']
       }
     })
 
@@ -271,6 +281,7 @@ export async function GET() {
       horizon: savedBudget.horizon,
       forecastMonths,
       variance,
+      currency: primaryCurrency,
       budgetCreatedAt: savedBudget.created_at,
       budgetUpdatedAt: savedBudget.updated_at,
     })

@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, successResponse } from '../../../_utils'
+import { getCachedAnalysis, setCachedAnalysis } from '@/lib/ai-cache'
 
 export const dynamic = 'force-dynamic'
 
@@ -8,9 +9,25 @@ export const dynamic = 'force-dynamic'
  * AI-powered risk assessment for EXPOSURE section
  * Analyzes actual transactions, budget, and variances to identify risks
  */
-export async function POST() {
+export async function POST(req: Request) {
   try {
     const userId = await requireAuth()
+    
+    // Check if refresh is requested
+    const body = await req.json().catch(() => ({}))
+    const forceRefresh = body?.refresh === true
+    
+    // Check cache first (unless refresh is forced)
+    if (!forceRefresh) {
+      const cached = getCachedAnalysis(userId, 'exposure')
+      if (cached) {
+        return successResponse({
+          ...cached,
+          message: 'AI exposure analysis (cached)',
+        })
+      }
+    }
+    
     const supabase = await createClient()
 
     // Get actual transactions (last 6 months)
@@ -304,9 +321,81 @@ export async function POST() {
     }
 
     // Prepare context for LLM
+    // Calculate scenario analysis (revenue shocks, cost shocks, timing delays)
+    const scenarios: Array<{
+      name: string
+      description: string
+      revenueShock?: number
+      costShock?: number
+      newRunway: number | null
+      runwayChange: number | null
+    }> = []
+
+    if (rollingForecast && cashRunway !== null) {
+      const forecastMonths = rollingForecast.rollingForecast?.filter((f: any) => f.type === 'forecast') || []
+      if (forecastMonths.length > 0) {
+        const avgMonthlyRevenue = forecastMonths.reduce((sum: number, m: any) => sum + m.income, 0) / forecastMonths.length
+        const avgMonthlyExpenses = forecastMonths.reduce((sum: number, m: any) => sum + m.expenses, 0) / forecastMonths.length
+        const avgMonthlyBurn = avgMonthlyExpenses - avgMonthlyRevenue
+
+        // Revenue shock scenarios (-10%, -20%, -30%)
+        for (const shock of [-10, -20, -30]) {
+          const shockedRevenue = avgMonthlyRevenue * (1 + shock / 100)
+          const newBurn = avgMonthlyExpenses - shockedRevenue
+          if (newBurn > 0 && currentBalance > 0) {
+            const newRunway = Math.floor(currentBalance / newBurn)
+            scenarios.push({
+              name: `${Math.abs(shock)}% Revenue Shock`,
+              description: `If revenue drops by ${Math.abs(shock)}%, runway changes from ${cashRunway} to ${newRunway} months`,
+              revenueShock: shock,
+              newRunway,
+              runwayChange: newRunway - cashRunway,
+            })
+          }
+        }
+
+        // Cost shock scenarios (+10%, +20%)
+        for (const shock of [10, 20]) {
+          const shockedExpenses = avgMonthlyExpenses * (1 + shock / 100)
+          const newBurn = shockedExpenses - avgMonthlyRevenue
+          if (newBurn > 0 && currentBalance > 0) {
+            const newRunway = Math.floor(currentBalance / newBurn)
+            scenarios.push({
+              name: `${shock}% Cost Shock`,
+              description: `If costs increase by ${shock}%, runway changes from ${cashRunway} to ${newRunway} months`,
+              costShock: shock,
+              newRunway,
+              runwayChange: newRunway - cashRunway,
+            })
+          }
+        }
+      }
+    }
+
+    // Identify fixed vs variable costs (structural leaks)
+    const fixedCosts = plannedExpenses?.filter((pe: any) => pe.recurrence === 'monthly') || []
+    const variableCosts = plannedExpenses?.filter((pe: any) => pe.recurrence === 'one-off') || []
+    const totalFixedCosts = fixedCosts.reduce((sum: number, pe: any) => sum + Number(pe.amount || 0), 0)
+    const totalVariableCosts = variableCosts.reduce((sum: number, pe: any) => sum + Number(pe.amount || 0), 0)
+
     const context = {
       currentBalance,
       cashRunway,
+      scenarios,
+      fixedCosts: {
+        count: fixedCosts.length,
+        total: totalFixedCosts,
+        percentage: totalFixedCosts + totalVariableCosts > 0 
+          ? (totalFixedCosts / (totalFixedCosts + totalVariableCosts)) * 100 
+          : 0,
+      },
+      variableCosts: {
+        count: variableCosts.length,
+        total: totalVariableCosts,
+        percentage: totalFixedCosts + totalVariableCosts > 0 
+          ? (totalVariableCosts / (totalFixedCosts + totalVariableCosts)) * 100 
+          : 0,
+      },
       monthlyTrends: Object.entries(monthlyData)
         .sort(([a], [b]) => a.localeCompare(b))
         .slice(-6) // Last 6 months
@@ -366,40 +455,46 @@ export async function POST() {
       } : null,
     }
 
-    // Check for AI provider
-    const openaiKey = process.env.OPENAI_API_KEY
-    const geminiKey = process.env.GEMINI_API_KEY
-    const provider = (process.env.AI_PROVIDER || (geminiKey ? 'gemini' : 'openai')).toLowerCase()
-
-    if (provider === 'openai' && !openaiKey && !geminiKey) {
-      // Fallback to rule-based analysis if no AI key
-      return successResponse({
-        analysis: null,
-        risks: generateRuleBasedRisks(context),
-        message: 'AI analysis unavailable. Showing rule-based risk assessment.',
-      })
-    }
 
     // Build prompt for LLM
-    const systemPrompt = `You are a financial risk analyst. Analyze the provided financial data and identify potential risks, concerns, and opportunities.
+    const systemPrompt = `You are a financial risk analyst. Analyze the provided financial data and identify potential risks.
+
+FOCUS: Answer ONLY "What could break?" - identify risks and what could go wrong, nothing else.
 
 CRITICAL: You MUST identify risks even if the financial situation looks healthy. Look for:
 1. **Dependency risks**: Large single payments, client concentration, revenue concentration
-2. **Cash flow sustainability**: Runway calculations, burn rate, monthly trends
+2. **Cash flow sustainability risks**: Short runway, negative trends, burn rate issues
 3. **Budget vs actual variances**: Spending patterns, revenue shortfalls, unexpected expenses
 4. **Missing data risks**: Absence of planned expenses when there should be some, incomplete budget data
-5. **Trend analysis**: Declining net income, increasing expenses, revenue volatility
-6. **Timing risks**: Large payments due at specific dates, seasonal patterns
-7. **Operational risks**: Lack of expense planning, over-reliance on future income
+5. **Timing risks**: Large payments due at specific dates, seasonal patterns
+6. **Operational risks**: Lack of expense planning, over-reliance on future income
+
+IMPORTANT CONTEXT ABOUT FORECAST DATA:
+- If rollingForecast contains forecast months with income: 0, expenses: 0, net: 0, this means NO BUDGET DATA EXISTS for those months, NOT that operations have ceased
+- Zero values in forecast months indicate missing budget data, which is a DATA QUALITY RISK, not a business closure risk
+- Missing budget data is a risk because it prevents accurate forecasting, but do NOT conclude that zero values mean business operations have stopped
+
+DO:
+- Identify specific risks: dependency, cash flow, timing, operational, data quality
+- Explain what could go wrong and potential impact
+- Focus on risks that could break the business
+
+DO NOT:
+- Describe current state (that's for STATE)
+- Analyze what changed (that's for DELTA)
+- Make predictions or forecasts (that's for TRAJECTORY)
+- Provide recommendations (that's for CHOICE)
+- Interpret zero forecast values as business closure
 
 IMPORTANT: 
 - If you see a large planned income item (especially >20% of current balance), this is a DEPENDENCY RISK.
 - If there are NO planned expenses but the business is operating, this is a MISSING DATA RISK.
+- If forecast months show zeros, this is a MISSING BUDGET DATA RISK, not a business closure risk.
 - Analyze the rollingForecast data to identify:
-  * Months where balance drops significantly
-  * Forecast months with negative net cash flow
-  * Discrepancies between actual trends and forecast projections
-  * Low points in the forecast that could cause cash flow issues
+  * Months where balance drops significantly (only for months with actual data)
+  * Forecast months with negative net cash flow (only for months with data)
+  * Low points in the forecast that could cause cash flow issues (only for months with data)
+  * Missing budget data for future months (this is a data quality risk)
 
 Return a JSON object with this structure:
 {
@@ -432,85 +527,42 @@ Analyze this financial situation and provide a comprehensive risk assessment.`
 
     let analysis: any = null
     let error: any = null
+    let usedProvider: string | null = null
 
-    // Try OpenAI first
-    if (provider === 'openai' && openaiKey) {
-      try {
-        const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${openaiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-4o-mini',
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.7,
-            max_tokens: 2000,
-            response_format: { type: 'json_object' },
-          }),
-        })
-
-        const data = await resp.json()
-        if (!resp.ok) throw new Error(data.error?.message || 'OpenAI API error')
-        
-        const responseText = data.choices?.[0]?.message?.content || '{}'
-        analysis = JSON.parse(responseText)
-      } catch (e: any) {
-        error = e
-        console.error('[Exposure Analyze] OpenAI error:', e)
-      }
-    }
-
-    // Fallback to Gemini
-    if (!analysis && geminiKey) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${geminiKey}`
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{
-                text: `${systemPrompt}\n\n${userPrompt}\n\nReturn only valid JSON, no markdown formatting.`
-              }]
-            }],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 2000,
-              responseMimeType: 'application/json',
-            },
-          }),
-        })
-
-        const data = await resp.json()
-        if (!resp.ok) throw new Error(data.error?.message || 'Gemini API error')
-        
-        const responseText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-        analysis = JSON.parse(responseText)
-      } catch (e: any) {
-        error = e
-        console.error('[Exposure Analyze] Gemini error:', e)
-      }
-    }
-
-    // Fallback to rule-based if AI fails
-    if (!analysis) {
-      return successResponse({
-        analysis: null,
-        risks: generateRuleBasedRisks(context),
-        message: error ? `AI analysis failed: ${error.message}. Showing rule-based assessment.` : 'AI analysis unavailable.',
+    // Try AI providers with automatic fallback
+    try {
+      const { callAI } = await import('@/lib/ai-call')
+      const { result, provider } = await callAI({
+        systemPrompt,
+        userPrompt,
+        maxTokens: 2000,
+        temperature: 0.7,
+        section: 'exposure',
       })
+      analysis = result
+      usedProvider = provider
+    } catch (e: any) {
+      error = e
+      console.error('[Exposure Analyze] AI call failed:', e)
     }
 
-    return successResponse({
+    const result = !analysis ? {
+      analysis: null,
+      risks: generateRuleBasedRisks(context),
+    } : {
       analysis,
       risks: analysis.risks || [],
       opportunities: analysis.opportunities || [],
-      message: 'AI risk assessment completed',
+    }
+    
+    // Cache the result (both AI and rule-based)
+    setCachedAnalysis(userId, 'exposure', result)
+    
+    return successResponse({
+      ...result,
+      message: !analysis 
+        ? (error ? `AI analysis failed: ${error.message}. Showing rule-based assessment.` : 'AI analysis unavailable.')
+        : `AI risk assessment completed${usedProvider ? ` (${usedProvider})` : ''}`,
     })
   } catch (e) {
     return errorResponse(e, 'Failed to analyze exposure risks')

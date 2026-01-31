@@ -30,6 +30,15 @@ type CsvItem = {
 function toISODate(input: string): string | null {
   if (!input) return null
   const s = String(input).trim()
+  
+  // Extract date from datetime format (e.g., "2026-01-12 02:48:31" -> "2026-01-12")
+  const dateTimeMatch = s.match(/^(\d{4}-\d{1,2}-\d{1,2})(?:\s+\d{1,2}:\d{1,2}:\d{1,2})?/)
+  if (dateTimeMatch) {
+    const datePart = dateTimeMatch[1]
+    const d = new Date(datePart)
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0,10)
+  }
+  
   // Normalize common separators
   const t = s.replace(/\./g, '-').replace(/\//g, '-')
   // ISO-like
@@ -82,44 +91,18 @@ function makeId(userId: string, accountId: string, bookedAt: string, description
 
 /**
  * AI Categorization helper function
- * Categorizes transactions using OpenAI or Gemini
+ * Categorizes transactions using all available AI providers (OpenAI, Gemini, Groq, Ollama, Claude)
+ * Uses the universal callAI utility for automatic fallback
+ * Automatically batches large transaction lists to avoid token limits (especially for Groq)
  */
 async function categorizeTransactionsWithAI(
   transactions: Array<{ id: string; description: string | null; amount: number; currency: string; booked_at: string }>,
   userId: string
 ): Promise<{ ok: boolean; categories?: Array<{ id: string; category: string }>; error?: string }> {
   try {
-    const openaiKey = process.env.OPENAI_API_KEY
-    const geminiKey = process.env.GEMINI_API_KEY
-    const provider = (process.env.AI_PROVIDER || (geminiKey ? 'gemini' : 'openai')).toLowerCase()
-    
-    console.log(`[Import AI] Provider: ${provider}, Gemini key: ${geminiKey ? 'SET (' + geminiKey.substring(0, 10) + '...)' : 'MISSING'}, OpenAI key: ${openaiKey ? 'SET' : 'MISSING'}`)
-    
-    if (provider === 'openai' && !openaiKey && !geminiKey) {
-      return { ok: false, error: 'No AI key configured' }
-    }
-    
-    if (provider === 'gemini' && !geminiKey) {
-      console.error('[Import AI] Gemini provider selected but GEMINI_API_KEY is missing')
-      return { ok: false, error: 'GEMINI_API_KEY is missing' }
-    }
-
     const CATEGORIES = [
       'Income','Transport','Restaurants','Cafes','Subscriptions','Groceries','Shopping','Housing','Utilities','Entertainment','Personal Care','Services','Taxes','Travel','Transfers','Cash','Home','Education','Healthcare','Other'
     ]
-
-    const buildPrompt = (items: typeof transactions) => {
-      return `You are a transaction categorization engine. Map each transaction to exactly one category from this list: ${CATEGORIES.join(', ')}.
-Return strict JSON with field "results" = array of objects { id, category, confidence }.
-Use only the provided categories. If unsure, use "Other".
-\n` + JSON.stringify(items.map(t => ({
-        id: t.id,
-        description: t.description,
-        amount: t.amount,
-        currency: t.currency,
-        date: t.booked_at
-      })))
-    }
 
     const items = transactions.map(t => ({
       id: t.id,
@@ -129,132 +112,133 @@ Use only the provided categories. If unsure, use "Other".
       date: t.booked_at
     }))
 
-    let parsed: any | null = null
-    let lastError: any = null
+    const systemPrompt = `You are a transaction categorization engine. Map each transaction to exactly one category from this list: ${CATEGORIES.join(', ')}.
+Return strict JSON with field "results" = array of objects { id, category, confidence }.
+Use only the provided categories. If unsure, use "Other".
+Each result must have: id (string), category (string from the list), confidence (number 0-1).`
 
-    const tryOpenAI = async () => {
-      const body = {
-        model: 'gpt-4o-mini',
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: 'You classify bank transactions into predefined categories.' },
-          { role: 'user', content: buildPrompt(transactions) }
-        ]
-      }
-      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
-        body: JSON.stringify(body)
-      })
-      const data = await resp.json()
-      if (!resp.ok) throw { provider: 'openai', data }
-      try { return JSON.parse(data.choices?.[0]?.message?.content || '{}') } catch { throw { provider: 'openai-parse', data: data.choices?.[0]?.message?.content } }
-    }
-
-    const tryGemini = async () => {
-      const bodyBase = {
-        contents: [ { role: 'user', parts: [ { text: buildPrompt(transactions) } ] } ],
+    // Use the universal callAI utility which supports all providers with automatic fallback
+    const { callAI } = await import('@/lib/ai-call')
+    
+    // Batch size: ~30 transactions per batch to stay well under Groq's 6000 TPM limit
+    // Each transaction is ~100-150 tokens, so 30 transactions = ~3000-4500 tokens
+    // This leaves room for system prompt and response, staying safely under 6000 TPM
+    const BATCH_SIZE = 30
+    const allCategories: Array<{ id: string; category: string }> = []
+    let lastRetryWait = 0 // Track retry wait time from last error
+    
+    console.log(`[Import AI] Starting categorization for ${items.length} transactions in batches of ${BATCH_SIZE}`)
+    
+    // Process transactions in batches
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE)
+      const batchNumber = Math.floor(i / BATCH_SIZE) + 1
+      const totalBatches = Math.ceil(items.length / BATCH_SIZE)
+      
+      console.log(`[Import AI] Processing batch ${batchNumber}/${totalBatches} (${batch.length} transactions)`)
+      
+      // If we have a retry wait time from previous error, wait before processing next batch
+      if (lastRetryWait > 0) {
+        const waitSeconds = Math.ceil(lastRetryWait)
+        console.log(`[Import AI] Waiting ${waitSeconds}s before batch ${batchNumber} due to rate limit...`)
+        await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000))
+        lastRetryWait = 0 // Reset after waiting
       }
       
-      // First, try to list available models
-      let availableModels: string[] = []
+      const userPrompt = `Categorize these ${batch.length} transactions:\n\n${JSON.stringify(batch, null, 2)}`
+      
+      let parsed: any
       try {
-        const listUrl = `https://generativelanguage.googleapis.com/v1/models?key=${geminiKey}`
-        console.log(`[Import AI] Listing available Gemini models...`)
-        const listResp = await fetch(listUrl)
-        const listData = await listResp.json()
-        if (listResp.ok && listData.models) {
-          availableModels = listData.models
-            .filter((m: any) => m.supportedGenerationMethods?.includes('generateContent'))
-            .map((m: any) => m.name.replace('models/', ''))
-          console.log(`[Import AI] Available Gemini models:`, availableModels.slice(0, 10))
-        } else {
-          console.warn(`[Import AI] Failed to list models:`, listData.error?.message || listData)
-        }
+        const result = await callAI({
+          systemPrompt,
+          userPrompt,
+          maxTokens: 3000, // Reduced per batch since we're processing smaller chunks
+          temperature: 0.3, // Lower temperature for more consistent categorization
+          section: `transaction-import-batch-${batchNumber}`
+        })
+        parsed = result.result
+        console.log(`[Import AI] Batch ${batchNumber} success with provider: ${result.provider}`)
+        lastRetryWait = 0 // Reset on success
       } catch (e: any) {
-        console.error(`[Import AI] ListModels exception:`, e.message)
-      }
-
-      // Use only available models from the list, or fallback to known working models
-      const modelsToTry = availableModels.length > 0 
-        ? availableModels 
-        : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-flash-001', 'gemini-2.5-pro']
-      
-      let last: any = null
-      for (const m of modelsToTry) {
-        try {
-          const url = `https://generativelanguage.googleapis.com/v1/models/${m}:generateContent?key=${geminiKey}`
-          console.log(`[Import AI] Trying model: ${m}`)
-          const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(bodyBase) })
-          const data = await resp.json()
-          if (!resp.ok) { 
-            const errorMsg = data.error?.message || data.message || 'Unknown error'
-            console.log(`[Import AI] Model ${m} failed:`, errorMsg)
-            
-            // Check for leaked key error
-            if (errorMsg.includes('leaked') || errorMsg.includes('reported')) {
-              throw { 
-                provider: 'gemini', 
-                model: m, 
-                data: data.error || data,
-                error: 'API key was reported as leaked. Please generate a new API key in Google AI Studio.'
-              }
-            }
-            
-            last = { provider: 'gemini', model: m, data: data.error || data }; 
-            continue 
-          }
-          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || ''
-          console.log(`[Import AI] Model ${m} success, response length:`, text.length)
-          // Extract JSON from markdown code block if present
-          let jsonText = text.trim()
-          if (jsonText.startsWith('```')) {
-            jsonText = jsonText.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim()
-          }
-          console.log(`[Import AI] Parsing JSON, first 100 chars:`, jsonText.substring(0, 100))
-          return JSON.parse(jsonText || '{}')
-        } catch (e: any) {
-          // If it's a leaked key error, throw immediately
-          if (e.error && e.error.includes('leaked')) {
-            throw e
-          }
-          console.error(`[Import AI] Model ${m} exception:`, e.message || e)
-          last = e
+        const errorMessage = e?.message || String(e || '')
+        console.error(`[Import AI] Batch ${batchNumber} failed:`, errorMessage)
+        
+        // Extract retry times from error message
+        // Groq format: "Rate limit reached... Please try again in 17.02s"
+        // Gemini format: "Please retry in 55.9s"
+        // We want to use the SHORTEST retry time to proceed faster
+        let minRetryTime: number | null = null
+        
+        // Try Groq format first (usually shorter)
+        const groqRetryMatch = errorMessage.match(/Rate limit reached.*?Please try again in (\d+(?:\.\d+)?)\s*(?:second|sec|s)/i)
+        if (groqRetryMatch) {
+          minRetryTime = parseFloat(groqRetryMatch[1])
         }
+        
+        // Also check for general retry patterns (Gemini, etc.)
+        const allRetryMatches = errorMessage.matchAll(/(?:try again|retry) (?:in|after) (\d+(?:\.\d+)?)\s*(?:second|sec|s)/gi)
+        for (const match of allRetryMatches) {
+          const retryTime = parseFloat(match[1])
+          if (minRetryTime === null || retryTime < minRetryTime) {
+            minRetryTime = retryTime
+          }
+        }
+        
+        // Use the shortest retry time found, or progressive delay
+        if (minRetryTime !== null) {
+          lastRetryWait = minRetryTime
+          console.log(`[Import AI] Rate limit detected. Will wait ${Math.ceil(lastRetryWait)}s before next batch`)
+        } else {
+          // If no retry time specified, use a progressive delay
+          // Increase delay with each failed batch to avoid hammering the API
+          lastRetryWait = Math.min(5 + (batchNumber - 1) * 1, 30) // Max 30 seconds
+          console.log(`[Import AI] No retry time found. Using progressive delay: ${lastRetryWait}s`)
+        }
+        
+        // If one batch fails, continue with other batches but log the error
+        // We'll return partial results if some batches succeed
+        continue
       }
-      throw last || { provider: 'gemini', data: 'No models available or all models failed' }
+
+      if (!parsed || !parsed.results) {
+        console.error(`[Import AI] Batch ${batchNumber} invalid response structure:`, parsed)
+        continue
+      }
+
+      const results: Array<{ id: string; category: string; confidence?: number }> = parsed?.results || []
+      const threshold = 0.5
+      const CANON: Record<string, string> = Object.fromEntries(CATEGORIES.map(c => [c.toLowerCase(), c]))
+      const canonicalize = (cat: any): string | null => {
+        const k = String(cat || '').trim().toLowerCase()
+        return CANON[k] || null
+      }
+      
+      const batchCategories = results
+        .filter(r => r?.id)
+        .map(r => ({ id: r.id, category: canonicalize(r.category), confidence: r.confidence ?? 0.75 }))
+        .filter(r => r.category && r.confidence! >= threshold)
+        .map(r => ({ id: r.id, category: r.category as string }))
+
+      allCategories.push(...batchCategories)
+      console.log(`[Import AI] Batch ${batchNumber} processed ${batchCategories.length} categories from ${results.length} results`)
+      
+      // Base delay between batches to avoid rate limits (increased from 500ms to 2s)
+      // This gives Groq time to reset its TPM counter
+      if (i + BATCH_SIZE < items.length) {
+        await new Promise(resolve => setTimeout(resolve, 2000)) // 2s delay between batches
+      }
     }
 
-    if (provider === 'gemini') {
-      try { parsed = await tryGemini() } catch (e) { lastError = e; if (openaiKey) { try { parsed = await tryOpenAI() } catch (ee) { lastError = ee } } }
-    } else {
-      try { parsed = await tryOpenAI() } catch (e) { lastError = e; if (geminiKey) { try { parsed = await tryGemini() } catch (ee) { lastError = ee } } }
+    console.log(`[Import AI] Total processed ${allCategories.length} categories from ${items.length} transactions`)
+    console.log('[Import AI] Sample categories:', allCategories.slice(0, 3))
+
+    if (allCategories.length === 0) {
+      return { ok: false, error: 'All batches failed. No categories could be assigned.' }
     }
 
-    if (!parsed) {
-      console.error('[Import AI] Failed to parse AI response:', lastError)
-      return { ok: false, error: String(lastError) }
-    }
-
-    console.log('[Import AI] Parsed AI response:', { resultsCount: parsed?.results?.length })
-    const results: Array<{ id: string; category: string; confidence?: number }> = parsed?.results || []
-    const threshold = 0.5
-    const CANON: Record<string, string> = Object.fromEntries(CATEGORIES.map(c => [c.toLowerCase(), c]))
-    const canonicalize = (cat: any): string | null => {
-      const k = String(cat || '').trim().toLowerCase()
-      return CANON[k] || null
-    }
-    const categories = results
-      .filter(r => r?.id)
-      .map(r => ({ id: r.id, category: canonicalize(r.category), confidence: r.confidence ?? 0.75 }))
-      .filter(r => r.category && r.confidence! >= threshold)
-      .map(r => ({ id: r.id, category: r.category as string }))
-
-    console.log(`[Import AI] Processed ${categories.length} categories from ${results.length} results`)
-    console.log('[Import AI] Sample categories:', categories.slice(0, 3))
-
-    return { ok: true, categories }
+    return { ok: true, categories: allCategories }
   } catch (e: any) {
+    console.error('[Import AI] Exception in categorizeTransactionsWithAI:', e)
     return { ok: false, error: String(e) }
   }
 }
@@ -355,45 +339,88 @@ export async function POST(req: Request) {
     }
 
     // Step 2: Insert transactions WITH categories already set
+    // Recreate Supabase client after long AI categorization process to avoid connection timeout
+    console.log('[Import] Recreating Supabase client before database operations...')
+    
     let upserted = 0
     let duplicates = 0
-    for (let i = 0; i < categorizedRows.length; i += 500) {
-      const chunk = categorizedRows.slice(i, i + 500)
-      // Pre-check existing IDs
-      const ids = chunk.map(r => r.id)
-      const { data: existing, error: existErr } = await supabase
-        .from('Transactions')
-        .select('id')
-        .in('id', ids)
-      if (existErr) {
-        throw new Error(`Database error while checking existing transactions: ${existErr.message}`)
-      }
-      const existingSet = new Set((existing || []).map(r => (r as any).id))
-      const toInsert = chunk.filter(r => !existingSet.has(r.id))
-      duplicates += (chunk.length - toInsert.length)
-      if (toInsert.length === 0) continue
+    
+    // Helper function to retry database operations with exponential backoff
+    async function retryDbOperation<T>(
+      operation: (client: Awaited<ReturnType<typeof createClient>>) => Promise<T>,
+      operationName: string,
+      maxRetries: number = 3
+    ): Promise<T> {
+      let lastError: any = null
+      let client = await createClient()
       
-      // Insert with categories already set
-      console.log(`[Import] Inserting ${toInsert.length} transactions`)
-      console.log(`[Import] Sample BEFORE insert:`, toInsert.slice(0, 3).map(t => ({ id: t.id.substring(0, 8), category: t.category, description: t.description?.slice(0, 30) })))
-      const { error, data } = await supabase
-        .from('Transactions')
-        .insert(toInsert)
-        .select('id, category, description')
-      if (error) {
-        console.error(`[Import] Insert error:`, error)
-        throw new Error(`Database error while inserting transactions: ${error.message}`)
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          return await operation(client)
+        } catch (e: any) {
+          lastError = e
+          const errorMessage = e?.message || String(e || '')
+          const isNetworkError = errorMessage.includes('fetch failed') || 
+                                errorMessage.includes('TypeError') ||
+                                errorMessage.includes('network') ||
+                                errorMessage.includes('ECONNREFUSED') ||
+                                errorMessage.includes('ETIMEDOUT')
+          
+          if (isNetworkError && attempt < maxRetries) {
+            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000) // Exponential backoff: 1s, 2s, 4s (max 5s)
+            console.warn(`[Import] ${operationName} failed (attempt ${attempt}/${maxRetries}): ${errorMessage}. Retrying in ${waitTime}ms...`)
+            await new Promise(resolve => setTimeout(resolve, waitTime))
+            // Recreate client on retry
+            client = await createClient()
+            continue
+          }
+          throw e
+        }
       }
+      throw lastError
+    }
+    
+    const DB_CHUNK_SIZE = 200
+    for (let i = 0; i < categorizedRows.length; i += DB_CHUNK_SIZE) {
+      const chunk = categorizedRows.slice(i, i + DB_CHUNK_SIZE)
+      const toInsert = chunk
+      if (toInsert.length === 0) continue
+
+      // Upsert with ignoreDuplicates to avoid a large pre-check query
+      console.log(`[Import] Upserting ${toInsert.length} transactions`)
+      console.log(`[Import] Sample BEFORE upsert:`, toInsert.slice(0, 3).map(t => ({ id: t.id.substring(0, 8), category: t.category, description: t.description?.slice(0, 30) })))
+
+      const { error, data } = await retryDbOperation(
+        async (client) => {
+          const result = await client
+            .from('Transactions')
+            .upsert(toInsert, { onConflict: 'id', ignoreDuplicates: true })
+            .select('id, category, description')
+          if (result.error) {
+            throw new Error(result.error.message)
+          }
+          return result
+        },
+        `Upserting transactions (chunk ${Math.floor(i / DB_CHUNK_SIZE) + 1})`
+      )
+
+      if (error) {
+        console.error(`[Import] Upsert error:`, error)
+        throw new Error(`Database error while upserting transactions: ${error.message}`)
+      }
+
       const inserted = Array.isArray(data) ? data.length : 0
       upserted += inserted
-      console.log(`[Import] Inserted ${inserted} transactions`)
-      console.log(`[Import] Sample AFTER insert:`, data?.slice(0, 3).map((t: any) => ({ id: t.id.substring(0, 8), category: t.category, description: t.description?.slice(0, 30) })))
-      
+      const chunkDuplicates = Math.max(0, toInsert.length - inserted)
+      duplicates += chunkDuplicates
+      console.log(`[Import] Upserted ${inserted} transactions (duplicates: ${chunkDuplicates})`)
+      console.log(`[Import] Sample AFTER upsert:`, data?.slice(0, 3).map((t: any) => ({ id: t.id.substring(0, 8), category: t.category, description: t.description?.slice(0, 30) })))
+
       // Verify categories were saved correctly
       if (data && data.length > 0) {
         const healthcareCount = data.filter((t: any) => t.category === 'Healthcare').length
         if (healthcareCount > 0) {
-          console.error(`[Import] WARNING: ${healthcareCount} transactions have Healthcare category after insert!`)
+          console.error(`[Import] WARNING: ${healthcareCount} transactions have Healthcare category after upsert!`)
           console.error(`[Import] This suggests a database trigger or default is overwriting categories`)
         }
       }
@@ -409,7 +436,10 @@ export async function POST(req: Request) {
       aiAttempted: aiCategorizationAttempted,
       aiSuccess: aiCategorizationSuccess,
     })
-  } catch (e) {
+  } catch (e: any) {
+    console.error('[Import] Exception in POST handler:', e)
+    console.error('[Import] Error stack:', e?.stack)
+    console.error('[Import] Error message:', e?.message)
     return errorResponse(e, 'Failed to import transactions')
   }
 }

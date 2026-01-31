@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/toast'
 import { Skeleton } from '@/components/ui/skeleton'
+import { formatCurrency, getCurrencySymbol } from '@/lib/currency'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 import { Bar, Line } from 'react-chartjs-2'
 
@@ -15,6 +16,7 @@ type VarianceData = {
   hasBudget: boolean
   horizon?: '6months' | 'yearend'
   forecastMonths?: string[]
+  currency?: string
   variance?: Array<{
     month: string
     type: 'actual' | 'forecast'
@@ -39,14 +41,10 @@ export default function BudgetVariancePage() {
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<VarianceData | null>(null)
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
-  const [selectedView, setSelectedView] = useState<'summary' | 'detailed'>('summary')
-  const [noCents, setNoCents] = useState(true)
 
-  const numberFmt = useMemo(() => new Intl.NumberFormat('en-US', { 
-    minimumFractionDigits: noCents ? 0 : 2, 
-    maximumFractionDigits: noCents ? 0 : 2 
-  }), [noCents])
-  const format = (n: number) => numberFmt.format(n || 0)
+  const currency = data?.currency || 'GBP'
+  const formatValue = (value: number) => formatCurrency(value, currency, false)
+  const formatPercent = (value: number) => `${Math.round(value)}%`
 
   const formatMonth = (month: string) => {
     const [year, monthNum] = month.split('-')
@@ -172,42 +170,30 @@ export default function BudgetVariancePage() {
           <p className="text-gray-600 mt-1">Plan vs Actual Comparison</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => router.push('/dashboard')}>
-            Dashboard
-          </Button>
-          <Button
-            variant={selectedView === 'summary' ? 'default' : 'outline'}
-            onClick={() => setSelectedView('summary')}
-          >
-            Summary
-          </Button>
-          <Button
-            variant={selectedView === 'detailed' ? 'default' : 'outline'}
-            onClick={() => setSelectedView('detailed')}
-          >
-            Detailed
-          </Button>
-          <Button variant="outline" onClick={() => setNoCents(!noCents)}>
-            {noCents ? 'Show Cents' : 'Hide Cents'}
-          </Button>
+          <Button variant="outline" onClick={() => router.push('/dashboard')}>Dashboard</Button>
+          <Button variant="default" onClick={() => router.push('/framework')}>Framework</Button>
+          <Button variant="outline" onClick={() => router.push('/cash-flow')}>Cash Flow</Button>
+          <Button variant="outline" onClick={() => router.push('/budget')}>Budget</Button>
+          <Button variant="outline" onClick={() => router.push('/rolling-forecast')}>Rolling Forecast</Button>
+          <Button variant="outline" onClick={() => router.push('/budget-variance')}>Plan vs Actual</Button>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Total Variance (Actual Months)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {format(actualVariance.reduce((sum, v) => sum + v.variance.net, 0))}
+              {formatValue(actualVariance.reduce((sum, v) => sum + v.variance.net, 0))}
             </div>
             <p className="text-xs text-gray-600 mt-1">
               {actualVariance.length > 0 && (
                 <>
-                  {format(actualVariance.reduce((sum, v) => sum + v.plan.net, 0))} planned vs{' '}
-                  {format(actualVariance.reduce((sum, v) => sum + v.actual.net, 0))} actual
+                  {formatValue(actualVariance.reduce((sum, v) => sum + v.plan.net, 0))} planned vs{' '}
+                  {formatValue(actualVariance.reduce((sum, v) => sum + v.actual.net, 0))} actual
                 </>
               )}
             </p>
@@ -221,31 +207,17 @@ export default function BudgetVariancePage() {
           <CardContent>
             <div className="text-2xl font-bold">
               {actualVariance.length > 0
-                ? format(actualVariance.reduce((sum, v) => sum + v.variance.net, 0) / actualVariance.length)
-                : '0'}
+                ? formatValue(actualVariance.reduce((sum, v) => sum + v.variance.net, 0) / actualVariance.length)
+                : formatValue(0)}
             </div>
             <p className="text-xs text-gray-600 mt-1">
               {actualVariance.length} month{actualVariance.length !== 1 ? 's' : ''} with actual data
             </p>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Budget Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {data.budgetUpdatedAt
-                ? new Date(data.budgetUpdatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                : 'N/A'}
-            </div>
-            <p className="text-xs text-gray-600 mt-1">Last updated</p>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Charts */}
+      {/* Charts - Reordered: Income, Expenses, Net */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -277,7 +249,7 @@ export default function BudgetVariancePage() {
                     legend: { position: 'top' as const },
                     tooltip: {
                       callbacks: {
-                        label: (context) => `${context.dataset.label}: ${format(context.parsed.y)}`,
+                        label: (context) => `${context.dataset.label}: ${formatValue(context.parsed.y)}`,
                       },
                     },
                   },
@@ -285,7 +257,7 @@ export default function BudgetVariancePage() {
                     y: {
                       beginAtZero: true,
                       ticks: {
-                        callback: (value) => format(Number(value)),
+                        callback: (value) => formatValue(Number(value)),
                       },
                     },
                   },
@@ -325,7 +297,7 @@ export default function BudgetVariancePage() {
                     legend: { position: 'top' as const },
                     tooltip: {
                       callbacks: {
-                        label: (context) => `${context.dataset.label}: ${format(context.parsed.y)}`,
+                        label: (context) => `${context.dataset.label}: ${formatValue(context.parsed.y)}`,
                       },
                     },
                   },
@@ -333,7 +305,7 @@ export default function BudgetVariancePage() {
                     y: {
                       beginAtZero: true,
                       ticks: {
-                        callback: (value) => format(Number(value)),
+                        callback: (value) => formatValue(Number(value)),
                       },
                     },
                   },
@@ -387,14 +359,14 @@ export default function BudgetVariancePage() {
                     legend: { position: 'top' as const },
                     tooltip: {
                       callbacks: {
-                        label: (context) => `${context.dataset.label}: ${format(context.parsed.y)}`,
+                        label: (context) => `${context.dataset.label}: ${formatValue(context.parsed.y)}`,
                       },
                     },
                   },
                   scales: {
                     y: {
                       ticks: {
-                        callback: (value) => format(Number(value)),
+                        callback: (value) => formatValue(Number(value)),
                       },
                     },
                   },
@@ -416,20 +388,20 @@ export default function BudgetVariancePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left p-2">Month</th>
-                  <th className="text-right p-2">Type</th>
-                  <th className="text-right p-2">Plan Income</th>
-                  <th className="text-right p-2">Actual Income</th>
-                  <th className="text-right p-2">Variance</th>
-                  <th className="text-right p-2">%</th>
-                  <th className="text-right p-2">Plan Expenses</th>
-                  <th className="text-right p-2">Actual Expenses</th>
-                  <th className="text-right p-2">Variance</th>
-                  <th className="text-right p-2">%</th>
-                  <th className="text-right p-2">Plan Net</th>
-                  <th className="text-right p-2">Actual Net</th>
-                  <th className="text-right p-2">Variance</th>
-                  <th className="text-right p-2">%</th>
+                  <th className="text-left p-2 border-r">Month</th>
+                  <th className="text-right p-2 border-r">Type</th>
+                  <th className="text-right p-2 bg-blue-50">Plan Income</th>
+                  <th className="text-right p-2 bg-blue-50">Actual Income</th>
+                  <th className="text-right p-2 bg-blue-50">Variance</th>
+                  <th className="text-right p-2 bg-blue-50 border-r">%</th>
+                  <th className="text-right p-2 bg-red-50">Plan Expenses</th>
+                  <th className="text-right p-2 bg-red-50">Actual Expenses</th>
+                  <th className="text-right p-2 bg-red-50">Variance</th>
+                  <th className="text-right p-2 bg-red-50 border-r">%</th>
+                  <th className="text-right p-2 bg-green-50">Plan Net</th>
+                  <th className="text-right p-2 bg-green-50">Actual Net</th>
+                  <th className="text-right p-2 bg-green-50">Variance</th>
+                  <th className="text-right p-2 bg-green-50">%</th>
                 </tr>
               </thead>
               <tbody>
@@ -439,49 +411,94 @@ export default function BudgetVariancePage() {
                       className="border-b hover:bg-gray-50 cursor-pointer"
                       onClick={() => toggleMonthExpansion(v.month)}
                     >
-                      <td className="p-2 font-medium">{formatMonth(v.month)}</td>
-                      <td className="p-2 text-right">
+                      <td className="p-2 font-medium border-r">{formatMonth(v.month)}</td>
+                      <td className="p-2 text-right border-r">
                         <span className={`px-2 py-1 rounded text-xs ${
                           v.type === 'actual' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
                         }`}>
                           {v.type}
                         </span>
                       </td>
-                      <td className="p-2 text-right">{format(v.plan.income)}</td>
-                      <td className="p-2 text-right">{format(v.actual.income)}</td>
-                      <td className={`p-2 text-right ${
-                        v.variance.income >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {format(v.variance.income)}
+                      <td className="p-2 text-right bg-blue-50">{formatValue(v.plan.income)}</td>
+                      <td className="p-2 text-right bg-blue-50">{formatValue(v.actual.income)}</td>
+                      <td className="p-2 bg-blue-50">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className={`text-right ${
+                            v.variance.income >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {formatValue(v.variance.income)}
+                          </span>
+                          <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full ${
+                                v.variance.income >= 0 ? 'bg-green-500' : 'bg-red-500'
+                              }`}
+                              style={{ 
+                                width: `${Math.min(Math.abs(v.variancePercent.income), 100)}%`,
+                                marginLeft: v.variance.income < 0 ? 'auto' : '0'
+                              }}
+                            />
+                          </div>
+                        </div>
                       </td>
-                      <td className={`p-2 text-right ${
+                      <td className={`p-2 text-right bg-blue-50 border-r ${
                         v.variancePercent.income >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {v.variancePercent.income.toFixed(1)}%
+                        {formatPercent(v.variancePercent.income)}
                       </td>
-                      <td className="p-2 text-right">{format(v.plan.expenses)}</td>
-                      <td className="p-2 text-right">{format(v.actual.expenses)}</td>
-                      <td className={`p-2 text-right ${
-                        v.variance.expenses <= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {format(v.variance.expenses)}
+                      <td className="p-2 text-right bg-red-50">{formatValue(v.plan.expenses)}</td>
+                      <td className="p-2 text-right bg-red-50">{formatValue(v.actual.expenses)}</td>
+                      <td className="p-2 bg-red-50">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className={`text-right ${
+                            v.variance.expenses <= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {formatValue(v.variance.expenses)}
+                          </span>
+                          <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full ${
+                                v.variance.expenses <= 0 ? 'bg-green-500' : 'bg-red-500'
+                              }`}
+                              style={{ 
+                                width: `${Math.min(Math.abs(v.variancePercent.expenses), 100)}%`,
+                                marginLeft: v.variance.expenses > 0 ? 'auto' : '0'
+                              }}
+                            />
+                          </div>
+                        </div>
                       </td>
-                      <td className={`p-2 text-right ${
+                      <td className={`p-2 text-right bg-red-50 border-r ${
                         v.variancePercent.expenses <= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {v.variancePercent.expenses.toFixed(1)}%
+                        {formatPercent(v.variancePercent.expenses)}
                       </td>
-                      <td className="p-2 text-right">{format(v.plan.net)}</td>
-                      <td className="p-2 text-right">{format(v.actual.net)}</td>
-                      <td className={`p-2 text-right font-medium ${
-                        v.variance.net >= 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {format(v.variance.net)}
+                      <td className="p-2 text-right bg-green-50">{formatValue(v.plan.net)}</td>
+                      <td className="p-2 text-right bg-green-50">{formatValue(v.actual.net)}</td>
+                      <td className="p-2 bg-green-50">
+                        <div className="flex items-center justify-end gap-2">
+                          <span className={`text-right font-medium ${
+                            v.variance.net >= 0 ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {formatValue(v.variance.net)}
+                          </span>
+                          <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full ${
+                                v.variance.net >= 0 ? 'bg-green-500' : 'bg-red-500'
+                              }`}
+                              style={{ 
+                                width: `${Math.min(Math.abs(v.variancePercent.net), 100)}%`,
+                                marginLeft: v.variance.net < 0 ? 'auto' : '0'
+                              }}
+                            />
+                          </div>
+                        </div>
                       </td>
-                      <td className={`p-2 text-right font-medium ${
+                      <td className={`p-2 text-right font-medium bg-green-50 ${
                         v.variancePercent.net >= 0 ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        {v.variancePercent.net.toFixed(1)}%
+                        {formatPercent(v.variancePercent.net)}
                       </td>
                     </tr>
                     {expandedMonths.has(v.month) && (
@@ -509,24 +526,24 @@ export default function BudgetVariancePage() {
                                     return (
                                       <tr key={category} className="border-b">
                                         <td className="p-1">{category}</td>
-                                        <td className="p-1 text-right">{format(cat.plan.income)}</td>
-                                        <td className="p-1 text-right">{format(cat.actual.income)}</td>
+                                        <td className="p-1 text-right">{formatValue(cat.plan.income)}</td>
+                                        <td className="p-1 text-right">{formatValue(cat.actual.income)}</td>
                                         <td className={`p-1 text-right ${
                                           cat.variance.income >= 0 ? 'text-green-600' : 'text-red-600'
                                         }`}>
-                                          {format(cat.variance.income)}
+                                          {formatValue(cat.variance.income)}
                                         </td>
-                                        <td className="p-1 text-right">{format(cat.plan.expenses)}</td>
-                                        <td className="p-1 text-right">{format(cat.actual.expenses)}</td>
+                                        <td className="p-1 text-right">{formatValue(cat.plan.expenses)}</td>
+                                        <td className="p-1 text-right">{formatValue(cat.actual.expenses)}</td>
                                         <td className={`p-1 text-right ${
                                           cat.variance.expenses <= 0 ? 'text-green-600' : 'text-red-600'
                                         }`}>
-                                          {format(cat.variance.expenses)}
+                                          {formatValue(cat.variance.expenses)}
                                         </td>
                                         <td className={`p-1 text-right font-medium ${
                                           cat.variance.net >= 0 ? 'text-green-600' : 'text-red-600'
                                         }`}>
-                                          {format(cat.variance.net)}
+                                          {formatValue(cat.variance.net)}
                                         </td>
                                       </tr>
                                     )

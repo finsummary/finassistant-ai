@@ -4,19 +4,31 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/ui/loading'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
+import { BarChart3, TrendingUp, TrendingDown, Calendar, DollarSign, FileText, Settings, Sparkles, Trash2 } from 'lucide-react'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 type BudgetData = {
   horizon: '6months' | 'yearend'
   forecastMonths: string[]
-  categoryGrowthRates: Record<string, { incomeRate: number; expenseRate: number; lastValue: { income: number; expenses: number } }>
+  categoryGrowthRates: Record<string, {
+    incomeRate: number
+    expenseRate: number
+    lastValue: { income: number; expenses: number }
+    baselineValue?: { income: number; expenses: number }
+    trend?: {
+      income: { direction: 'up' | 'down' | 'flat'; strength: number; volatility: number; windowMonths: number; method: string }
+      expense: { direction: 'up' | 'down' | 'flat'; strength: number; volatility: number; windowMonths: number; method: string }
+    }
+  }>
   budget: Record<string, Record<string, { income: number; expenses: number }>> // API uses 'expenses' key
   historicalMonths: string[]
   generatedAt: string
@@ -71,12 +83,31 @@ export default function BudgetPage() {
         }
 
         const loadedBudget = budgetJson?.data?.budget || budgetJson?.budget
+        console.log('[Budget Page] Loaded budget structure:', {
+          hasData: !!budgetJson?.data,
+          hasBudget: !!loadedBudget,
+          budgetKeys: loadedBudget ? Object.keys(loadedBudget) : [],
+          forecastMonths: loadedBudget?.forecastMonths?.length || 0,
+          budgetMonths: loadedBudget?.budget ? Object.keys(loadedBudget.budget) : [],
+          firstMonthData: loadedBudget?.budget && loadedBudget.forecastMonths?.[0] 
+            ? loadedBudget.budget[loadedBudget.forecastMonths[0]] 
+            : null
+        })
         if (budgetJson?.ok && loadedBudget) {
+          // Verify structure
+          if (!loadedBudget.forecastMonths || loadedBudget.forecastMonths.length === 0) {
+            console.error('[Budget Page] Loaded budget has no forecastMonths:', loadedBudget)
+          }
+          if (!loadedBudget.budget || Object.keys(loadedBudget.budget).length === 0) {
+            console.error('[Budget Page] Loaded budget has no budget data:', loadedBudget)
+          }
           setBudgetData(loadedBudget)
           setHorizon(loadedBudget.horizon || '6months')
           if (loadedBudget.generatedAt) {
             setLastSaved(new Date(loadedBudget.generatedAt))
           }
+        } else {
+          console.warn('[Budget Page] Failed to load budget:', { ok: budgetJson?.ok, loadedBudget: !!loadedBudget })
         }
       } catch (e) {
         console.error('[Budget Page] Error loading data:', e)
@@ -86,6 +117,49 @@ export default function BudgetPage() {
     }
     fetchData()
   }, [])
+
+  const deleteBudget = async () => {
+    if (!budgetData) {
+      addToast('No budget to delete', 'warning')
+      return
+    }
+
+    if (!confirm('Are you sure you want to delete the saved budget? This action cannot be undone.')) {
+      return
+    }
+
+    setSaving(true)
+    try {
+      const deleteRes = await fetch('/api/budget/delete', {
+        method: 'DELETE',
+      })
+      
+      if (!deleteRes.ok) {
+        const errorText = await deleteRes.text()
+        console.error('[Budget Page] Delete HTTP error:', deleteRes.status, errorText)
+        addToast(`Failed to delete budget: HTTP ${deleteRes.status}`, 'error')
+        return
+      }
+
+      const deleteJson = await deleteRes.json()
+      if (!deleteJson.ok) {
+        addToast(`Failed to delete budget: ${deleteJson.error || 'Unknown error'}`, 'error')
+        return
+      }
+
+      // Clear local state
+      setBudgetData(null)
+      setEditing({})
+      setEditingGrowthRates({})
+      setLastSaved(null)
+      addToast('Budget deleted successfully', 'success')
+    } catch (e: any) {
+      console.error('[Budget Page] Delete exception:', e)
+      addToast(`Failed to delete budget: ${e.message}`, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const saveBudget = async () => {
     if (!budgetData) {
@@ -211,8 +285,26 @@ export default function BudgetPage() {
         categories: Object.keys(json.data?.budget || {}).length > 0 
           ? Object.keys(Object.values(json.data.budget)[0] || {}) 
           : [],
-        plannedItemsInFirstMonth: json.data?.budget?.[json.data?.forecastMonths?.[0]]?.['Planned Items']
+        plannedItemsInFirstMonth: json.data?.budget?.[json.data?.forecastMonths?.[0]]?.['Planned Items'],
+        budgetStructure: json.data?.budget ? Object.keys(json.data.budget).slice(0, 2).map(month => ({
+          month,
+          categories: Object.keys(json.data.budget[month] || {}),
+          plannedItems: json.data.budget[month]?.['Planned Items']
+        })) : []
       })
+      
+      // Verify data structure before setting
+      if (!json.data?.forecastMonths || json.data.forecastMonths.length === 0) {
+        console.error('[Budget Page] No forecast months in generated data:', json.data)
+        addToast('Budget generation failed: No forecast months', 'error')
+        return
+      }
+      if (!json.data?.budget || Object.keys(json.data.budget).length === 0) {
+        console.error('[Budget Page] No budget data in generated data:', json.data)
+        addToast('Budget generation failed: No budget data', 'error')
+        return
+      }
+      
       setBudgetData(json.data)
       setEditing({}) // Reset editing state
       setEditingCell(null)
@@ -252,12 +344,21 @@ export default function BudgetPage() {
 
   // Get all unique categories from budget
   const allCategories = useMemo(() => {
-    if (!budgetData?.budget) return []
+    if (!budgetData?.budget) {
+      console.warn('[Budget] No budget data for allCategories')
+      return []
+    }
     const cats = new Set<string>()
     Object.values(budgetData.budget).forEach(monthData => {
       Object.keys(monthData).forEach(cat => cats.add(cat))
     })
-    return Array.from(cats).sort()
+    const categories = Array.from(cats).sort()
+    console.log('[Budget] All categories:', categories)
+    console.log('[Budget] Budget structure sample:', Object.keys(budgetData.budget).slice(0, 2).map(month => ({
+      month,
+      categories: Object.keys(budgetData.budget[month] || {})
+    })))
+    return categories
   }, [budgetData])
 
   // Get value for category in month (from editing or budget)
@@ -313,6 +414,7 @@ export default function BudgetPage() {
       updatedGrowthRates[category].incomeRate = currentIncomeRate
       updatedGrowthRates[category].expenseRate = currentExpenseRate
       const lastValue = updatedGrowthRates[category].lastValue
+      const baseValue = updatedGrowthRates[category].baselineValue || lastValue
 
       // Recalculate budget for this category
       const updatedBudget = { ...budgetData.budget }
@@ -329,8 +431,8 @@ export default function BudgetPage() {
         const incomeGrowthFactor = Math.pow(1 + (currentIncomeRate / 100), monthsAhead)
         const expenseGrowthFactor = Math.pow(1 + (currentExpenseRate / 100), monthsAhead)
 
-        const projectedIncome = lastValue.income * incomeGrowthFactor
-        const projectedExpenses = lastValue.expenses * expenseGrowthFactor
+        const projectedIncome = baseValue.income * incomeGrowthFactor
+        const projectedExpenses = baseValue.expenses * expenseGrowthFactor
 
         updatedBudget[month][category] = {
           income: Math.max(0, projectedIncome),
@@ -369,16 +471,53 @@ export default function BudgetPage() {
 
   // Calculate totals for each month
   const monthTotals = useMemo(() => {
-    if (!budgetData) return {}
+    if (!budgetData) {
+      console.warn('[Budget] monthTotals: No budgetData')
+      return {}
+    }
+    if (!budgetData.forecastMonths || budgetData.forecastMonths.length === 0) {
+      console.warn('[Budget] monthTotals: No forecastMonths')
+      return {}
+    }
     const totals: Record<string, { income: number; expenses: number; net: number }> = {}
     budgetData.forecastMonths.forEach(month => {
       let income = 0
       let expenses = 0
+      
+      // First, check if month exists in budget
+      if (!budgetData.budget[month]) {
+        console.warn(`[Budget] Month ${month} not found in budget.budget`)
+      }
+      
       allCategories.forEach(cat => {
-        income += getCategoryMonthValue(cat, month, 'income')
-        expenses += getCategoryMonthValue(cat, month, 'expense')
+        const catIncome = getCategoryMonthValue(cat, month, 'income')
+        const catExpenses = getCategoryMonthValue(cat, month, 'expense')
+        income += catIncome
+        expenses += catExpenses
+        
+        // Debug planned items specifically
+        if (cat === 'Planned Items' && (catIncome > 0 || catExpenses > 0)) {
+          console.log(`[Budget] Month ${month} Planned Items: income=${catIncome}, expenses=${catExpenses}`)
+        }
       })
+      
       totals[month] = { income, expenses, net: income - expenses }
+      
+      // Debug log for troubleshooting
+      if (totals[month].income === 0 && totals[month].expenses === 0) {
+        console.warn(`[Budget] Month ${month} has zero totals.`, {
+          allCategories,
+          budgetMonthData: budgetData.budget[month],
+          categoryValues: allCategories.map(cat => ({
+            cat,
+            income: getCategoryMonthValue(cat, month, 'income'),
+            expense: getCategoryMonthValue(cat, month, 'expense'),
+            budgetData: budgetData.budget[month]?.[cat]
+          }))
+        })
+      } else {
+        console.log(`[Budget] Month ${month} totals:`, totals[month])
+      }
     })
     return totals
   }, [budgetData, allCategories, editing])
@@ -469,7 +608,15 @@ export default function BudgetPage() {
 
   // Chart data for budget forecast
   const chartData = useMemo(() => {
-    if (!budgetData || currentBalance === null) return { labels: [], datasets: [] }
+    if (!budgetData || currentBalance === null) {
+      console.warn('[Budget Chart] Missing data:', { budgetData: !!budgetData, currentBalance })
+      return { labels: [], datasets: [] }
+    }
+
+    if (!budgetData.forecastMonths || budgetData.forecastMonths.length === 0) {
+      console.warn('[Budget Chart] No forecast months:', budgetData)
+      return { labels: [], datasets: [] }
+    }
 
     const monthLabels = budgetData.forecastMonths.map(m => formatMonth(m))
     const dataPoints: number[] = []
@@ -477,11 +624,27 @@ export default function BudgetPage() {
     let runningBalance = currentBalance
     dataPoints.push(runningBalance) // Start with current balance
     
+    console.log('[Budget Chart] Starting with balance:', currentBalance)
+    console.log('[Budget Chart] Forecast months:', budgetData.forecastMonths)
+    console.log('[Budget Chart] Month totals:', monthTotals)
+    console.log('[Budget Chart] All categories:', allCategories)
+    console.log('[Budget Chart] Budget data sample:', {
+      firstMonth: budgetData.forecastMonths[0],
+      firstMonthData: budgetData.budget?.[budgetData.forecastMonths[0]],
+      allMonths: Object.keys(budgetData.budget || {})
+    })
+    
     budgetData.forecastMonths.forEach(month => {
       const net = monthTotals[month]?.net || 0
+      const totals = monthTotals[month]
       runningBalance += net
       dataPoints.push(runningBalance)
-      console.log(`[Budget Chart] Month ${month}: net=${net}, runningBalance=${runningBalance}`)
+      console.log(`[Budget Chart] Month ${month}: net=${net}, income=${totals?.income || 0}, expenses=${totals?.expenses || 0}, runningBalance=${runningBalance}`)
+      
+      // Debug: check if planned items are included
+      if (budgetData.budget?.[month]?.['Planned Items']) {
+        console.log(`[Budget Chart] Month ${month} has Planned Items:`, budgetData.budget[month]['Planned Items'])
+      }
     })
 
     const labels = ['Current', ...monthLabels]
@@ -493,123 +656,74 @@ export default function BudgetPage() {
       value: val 
     })))
 
-    // Find the index where balance goes negative (first negative value)
-    // Also check if balance crosses zero (goes from positive to negative)
-    let negativeIndex = -1
-    for (let i = 1; i < dataPoints.length; i++) {
-      // Check if balance crosses from positive/zero to negative
-      if (dataPoints[i-1] >= 0 && dataPoints[i] < 0) {
-        negativeIndex = i
-        break
-      }
-    }
-    
-    // If no crossing found, check for first negative value
-    if (negativeIndex === -1) {
-      for (let i = 0; i < dataPoints.length; i++) {
-        if (dataPoints[i] < 0) {
-          negativeIndex = i
-          break
-        }
-      }
-    }
-    
-    console.log('[Budget Chart] Negative index:', negativeIndex, 'at label:', negativeIndex >= 0 ? labels[negativeIndex] : 'none')
-    console.log('[Budget Chart] Data points around negative:', negativeIndex >= 0 ? {
-      before: negativeIndex > 0 ? { label: labels[negativeIndex - 1], value: dataPoints[negativeIndex - 1] } : null,
-      at: { label: labels[negativeIndex], value: dataPoints[negativeIndex] },
-      after: negativeIndex < dataPoints.length - 1 ? { label: labels[negativeIndex + 1], value: dataPoints[negativeIndex + 1] } : null,
-    } : 'none')
-
-    const datasets: any[] = []
-
-    // Create positive data array - show all positive values up to (but not including) transition
-    const positiveData = dataPoints.map((val, idx) => {
-      if (negativeIndex >= 0) {
-        // If we found a negative transition point
-        if (idx < negativeIndex) {
-          // Before transition: show positive values
-          return val > 0 ? val : null
-        } else {
-          // At and after transition: null (negative values go to negative dataset)
-          return null
-        }
-      }
-      // No transition: show all positive values
-      return val > 0 ? val : null
-    })
-
-    // Create negative data array - show 0 before first negative, then all negative values
-    const negativeData = dataPoints.map((val, idx) => {
-      if (negativeIndex >= 0) {
-        // If we found a negative transition point
-        if (idx < negativeIndex) {
-          // Before transition: null
-          return null
-        } else if (idx === negativeIndex) {
-          // At transition: if previous was positive, show 0 first, then the negative value
-          // But we can only show one value per index, so show the actual negative value
-          // The connection will be handled by showing the last positive value and first negative
-          return val < 0 ? val : (val === 0 ? 0 : null)
-        } else {
-          // After transition: show ALL negative values
-          return val < 0 ? val : null
-        }
-      }
-      // No transition: all null
-      return null
-    })
-    
-    // To connect lines smoothly, add 0 at the point before first negative in negativeData
-    if (negativeIndex >= 0 && negativeIndex > 0) {
-      // Set the point before negativeIndex to 0 in negativeData to connect the lines
-      negativeData[negativeIndex - 1] = 0
-    }
-    
-    console.log('[Budget Chart] Data points:', dataPoints)
-    console.log('[Budget Chart] Negative index:', negativeIndex)
-    console.log('[Budget Chart] Negative data (after fix):', negativeData)
-    console.log('[Budget Chart] Positive data (after fix):', positiveData)
-
-    // Positive segment (green) - always add
-    datasets.push({
-      label: 'Positive Balance',
-      data: positiveData,
-      borderColor: '#16a34a',
-      backgroundColor: (context: any) => {
-        const ctx = context.chart.ctx
-        const gradient = ctx.createLinearGradient(0, 0, 0, 400)
-        gradient.addColorStop(0, '#16a34a80')
-        gradient.addColorStop(1, '#16a34a00')
-        return gradient
-      },
-      fill: true,
-      tension: 0.3,
-      pointRadius: 4,
-      pointBackgroundColor: '#16a34a',
-      spanGaps: false, // Don't span gaps to avoid connecting through nulls
-    })
-
-    // Negative segment (red) - only add if there are negative values
-    if (negativeIndex >= 0) {
-      datasets.push({
-        label: 'Negative Balance',
-        data: negativeData,
-        borderColor: '#dc2626',
+    // Use a single dataset with one continuous line
+    // Color will be determined by segment (positive = green, negative = red)
+    const datasets: any[] = [
+      {
+        label: 'Cash Balance',
+        data: dataPoints,
+        borderColor: '#3b82f6', // Use a neutral blue for the line itself
         backgroundColor: (context: any) => {
-          const ctx = context.chart.ctx
-          const gradient = ctx.createLinearGradient(0, 0, 0, 400)
-          gradient.addColorStop(0, '#dc262680')
-          gradient.addColorStop(1, '#dc262600')
+          if (!context.chart.chartArea) {
+            return '#16a34a40'
+          }
+          const chart = context.chart
+          const { ctx, chartArea } = chart
+          if (!chartArea) {
+            return '#16a34a40'
+          }
+          
+          // Create gradient fill: green above zero, red below zero
+          const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+          const yScale = chart.scales.y
+          const zeroY = yScale.getPixelForValue(0)
+          const topY = chartArea.top
+          const bottomY = chartArea.bottom
+          
+          // Calculate where zero line is in the gradient
+          const zeroRatio = (zeroY - topY) / (bottomY - topY)
+          
+          // Green above zero
+          gradient.addColorStop(0, '#16a34a40')
+          gradient.addColorStop(Math.max(0, Math.min(1, zeroRatio - 0.01)), '#16a34a40')
+          // Red below zero
+          gradient.addColorStop(Math.max(0, Math.min(1, zeroRatio + 0.01)), '#dc262640')
+          gradient.addColorStop(1, '#dc262640')
+          
           return gradient
         },
-        fill: true,
+        fill: {
+          target: 'origin',
+          above: '#16a34a40', // Green fill above zero
+          below: '#dc262640', // Red fill below zero
+        },
         tension: 0.3,
         pointRadius: 4,
-        pointBackgroundColor: '#dc2626',
-        spanGaps: false, // Don't span gaps
-      })
-    }
+        pointBackgroundColor: (context: any) => {
+          const value = dataPoints[context.dataIndex]
+          return value >= 0 ? '#16a34a' : '#dc2626'
+        },
+        pointBorderColor: (context: any) => {
+          const value = dataPoints[context.dataIndex]
+          return value >= 0 ? '#16a34a' : '#dc2626'
+        },
+        pointHoverBackgroundColor: (context: any) => {
+          const value = dataPoints[context.dataIndex]
+          return value >= 0 ? '#16a34a' : '#dc2626'
+        },
+        pointHoverBorderColor: (context: any) => {
+          const value = dataPoints[context.dataIndex]
+          return value >= 0 ? '#16a34a' : '#dc2626'
+        },
+        segment: {
+          borderColor: (ctx: any) => {
+            const value = ctx.p1.parsed.y
+            return value >= 0 ? '#16a34a' : '#dc2626'
+          },
+        },
+        spanGaps: false,
+      }
+    ]
 
     // Zero line
     datasets.push({
@@ -733,13 +847,6 @@ export default function BudgetPage() {
           >
             Until Year End
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => setNoCents(!noCents)}
-          >
-            {noCents ? 'Show Cents' : 'Hide Cents'}
-          </Button>
           <Button variant="outline" onClick={() => router.push('/settings/planned-items')}>
             Planned Items
           </Button>
@@ -753,9 +860,12 @@ export default function BudgetPage() {
       </div>
 
       {/* Generate Budget Section */}
-      <Card className="mb-6">
+      <Card className="mb-6 border-2 shadow-sm hover:shadow-md transition-shadow">
         <CardHeader>
-          <CardTitle>Generate Budget</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            Generate Budget
+          </CardTitle>
           <CardDescription>
             Analyze your historical transactions and generate a budget based on monthly growth rates.
             The system calculates average month-over-month change rates for each category and projects future months.
@@ -804,6 +914,15 @@ export default function BudgetPage() {
                       'Save Budget'
                     )}
                   </Button>
+                  <Button 
+                    onClick={deleteBudget} 
+                    disabled={saving}
+                    variant="destructive"
+                    className="min-w-[120px]"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Budget
+                  </Button>
                   {lastSaved && (
                     <span className="text-xs text-muted-foreground">
                       Saved {lastSaved.toLocaleTimeString()}
@@ -836,8 +955,11 @@ export default function BudgetPage() {
           {/* Growth Rates Summary */}
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle>Category Growth Rates</CardTitle>
-              <CardDescription>Average monthly change rates calculated from historical data. Click values to edit manually.</CardDescription>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-primary" />
+                Category Growth Rates
+              </CardTitle>
+              <CardDescription>Smoothed trend rates based on the last 6 months (moving average + regression). Click values to edit manually.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -922,25 +1044,28 @@ export default function BudgetPage() {
           {/* Budget Table */}
           <Card>
             <CardHeader>
-              <CardTitle>Budget Forecast</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                Budget Forecast
+              </CardTitle>
               <CardDescription>
                 Projected budget for {budgetData.forecastMonths.length} months. Click values to edit.
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+                <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="sticky left-0 z-10 bg-muted/50 px-4 py-3 text-left font-semibold min-w-[200px]">
+                      <th className="sticky left-0 z-10 bg-muted/50 px-2 py-1.5 text-left font-semibold min-w-[120px]">
                         Category
                       </th>
                       {budgetData.forecastMonths.map(month => (
-                        <th key={month} className="px-4 py-3 text-right font-semibold min-w-[150px]">
+                        <th key={month} className="px-1.5 py-1.5 text-right font-semibold min-w-[75px] whitespace-nowrap">
                           {formatMonth(month)}
                         </th>
                       ))}
-                      <th className="px-4 py-3 text-right font-semibold min-w-[120px] bg-muted/50">
+                      <th className="px-2 py-1.5 text-right font-semibold min-w-[80px] bg-muted/50">
                         Total
                       </th>
                     </tr>
@@ -949,18 +1074,18 @@ export default function BudgetPage() {
                     {/* Cash at Start */}
                     {currentBalance !== null && (
                       <tr className="border-b-2 bg-blue-50/50">
-                        <td className="sticky left-0 z-10 bg-blue-50/50 px-4 py-2 font-semibold">
+                        <td className="sticky left-0 z-10 bg-blue-50/50 px-2 py-1.5 font-semibold text-xs">
                           Cash at Start
                         </td>
                         {budgetData.forecastMonths.map(month => {
                           const start = budgetCashBalances[month]?.start ?? 0
                           return (
-                            <td key={month} className="px-4 py-2 text-right font-semibold text-blue-700">
+                            <td key={month} className="px-1.5 py-1.5 text-right font-semibold text-blue-700 text-xs">
                               {format(start)}
                             </td>
                           )
                         })}
-                        <td className="px-4 py-2 text-right font-semibold text-blue-700 bg-muted/50">
+                        <td className="px-2 py-1.5 text-right font-semibold text-blue-700 bg-muted/50 text-xs">
                           {budgetData.forecastMonths.length > 0 ? format(budgetCashBalances[budgetData.forecastMonths[0]]?.start ?? 0) : '-'}
                         </td>
                       </tr>
@@ -970,7 +1095,7 @@ export default function BudgetPage() {
                     {incomeCategories.length > 0 && (
                       <>
                         <tr className="border-b bg-green-50/50">
-                          <td colSpan={budgetData.forecastMonths.length + 2} className="px-4 py-2 font-semibold text-green-700">
+                          <td colSpan={budgetData.forecastMonths.length + 2} className="px-2 py-1 font-semibold text-green-700 text-xs">
                             INCOME
                           </td>
                         </tr>
@@ -980,14 +1105,14 @@ export default function BudgetPage() {
                           )
                           return (
                             <tr key={`income-${category}`} className="border-b hover:bg-muted/30">
-                              <td className="sticky left-0 z-10 bg-background px-4 py-2 pl-6 text-sm font-medium">
+                              <td className="sticky left-0 z-10 bg-background px-2 py-1 pl-4 text-xs font-medium">
                                 {category}
                               </td>
                               {budgetData.forecastMonths.map(month => {
                                 const value = getCategoryMonthValue(category, month, 'income')
                                 const isEditing = editingCell?.month === month && editingCell?.category === category && editingCell?.type === 'income'
                                 return (
-                                  <td key={month} className="px-4 py-2">
+                                  <td key={month} className="px-1.5 py-1">
                                     {isEditing ? (
                                       <Input
                                         type="number"
@@ -996,12 +1121,12 @@ export default function BudgetPage() {
                                         onChange={(e) => updateValue(category, month, 'income', Math.round(parseFloat(e.target.value) || 0))}
                                         onBlur={() => setEditingCell(null)}
                                         autoFocus
-                                        className="text-right text-sm text-green-600 border-green-200 focus:border-green-400 w-full"
+                                        className="text-right text-xs text-green-600 border-green-200 focus:border-green-400 w-full h-7"
                                       />
                                     ) : (
                                       <div
                                         onClick={() => setEditingCell({ month, category, type: 'income' })}
-                                        className="text-right text-sm text-green-600 cursor-pointer hover:bg-green-50 px-2 py-1 rounded"
+                                        className="text-right text-xs text-green-600 cursor-pointer hover:bg-green-50 px-1 py-0.5 rounded"
                                       >
                                         {value !== 0 ? format(value) : '-'}
                                       </div>
@@ -1009,22 +1134,22 @@ export default function BudgetPage() {
                                   </td>
                                 )
                               })}
-                              <td className="px-4 py-2 text-right text-sm font-semibold text-green-600 bg-muted/30">
+                              <td className="px-2 py-1 text-right text-xs font-semibold text-green-600 bg-muted/30">
                                 {format(categoryTotal)}
                               </td>
                             </tr>
                           )
                         })}
                         <tr className="border-b-2 bg-green-100/50">
-                          <td className="sticky left-0 z-10 bg-green-100/50 px-4 py-2 font-semibold">
+                          <td className="sticky left-0 z-10 bg-green-100/50 px-2 py-1.5 font-semibold text-xs">
                             Total Income
                           </td>
                           {budgetData.forecastMonths.map(month => (
-                            <td key={month} className="px-4 py-2 text-right font-semibold text-green-700">
+                            <td key={month} className="px-1.5 py-1.5 text-right font-semibold text-green-700 text-xs">
                               {format(monthTotals[month]?.income || 0)}
                             </td>
                           ))}
-                          <td className="px-4 py-2 text-right font-semibold text-green-700 bg-muted/50">
+                          <td className="px-2 py-1.5 text-right font-semibold text-green-700 bg-muted/50 text-xs">
                             {format(budgetData.forecastMonths.reduce((sum, month) => 
                               sum + (monthTotals[month]?.income || 0), 0
                             ))}
@@ -1037,7 +1162,7 @@ export default function BudgetPage() {
                     {expenseCategories.length > 0 && (
                       <>
                         <tr className="border-b bg-red-50/50">
-                          <td colSpan={budgetData.forecastMonths.length + 2} className="px-4 py-2 font-semibold text-red-700">
+                          <td colSpan={budgetData.forecastMonths.length + 2} className="px-2 py-1 font-semibold text-red-700 text-xs">
                             EXPENSES
                           </td>
                         </tr>
@@ -1047,14 +1172,14 @@ export default function BudgetPage() {
                           )
                           return (
                             <tr key={`expense-${category}`} className="border-b hover:bg-muted/30">
-                              <td className="sticky left-0 z-10 bg-background px-4 py-2 pl-6 text-sm font-medium">
+                              <td className="sticky left-0 z-10 bg-background px-2 py-1 pl-4 text-xs font-medium">
                                 {category}
                               </td>
                               {budgetData.forecastMonths.map(month => {
                                 const value = getCategoryMonthValue(category, month, 'expense')
                                 const isEditing = editingCell?.month === month && editingCell?.category === category && editingCell?.type === 'expense'
                                 return (
-                                  <td key={month} className="px-4 py-2">
+                                  <td key={month} className="px-1.5 py-1">
                                     {isEditing ? (
                                       <Input
                                         type="number"
@@ -1063,12 +1188,12 @@ export default function BudgetPage() {
                                         onChange={(e) => updateValue(category, month, 'expense', Math.round(parseFloat(e.target.value) || 0))}
                                         onBlur={() => setEditingCell(null)}
                                         autoFocus
-                                        className="text-right text-sm text-red-600 border-red-200 focus:border-red-400 w-full"
+                                        className="text-right text-xs text-red-600 border-red-200 focus:border-red-400 w-full h-7"
                                       />
                                     ) : (
                                       <div
                                         onClick={() => setEditingCell({ month, category, type: 'expense' })}
-                                        className="text-right text-sm text-red-600 cursor-pointer hover:bg-red-50 px-2 py-1 rounded"
+                                        className="text-right text-xs text-red-600 cursor-pointer hover:bg-red-50 px-1 py-0.5 rounded"
                                       >
                                         {value !== 0 ? format(value) : '-'}
                                       </div>
@@ -1076,22 +1201,22 @@ export default function BudgetPage() {
                                   </td>
                                 )
                               })}
-                              <td className="px-4 py-2 text-right text-sm font-semibold text-red-600 bg-muted/30">
+                              <td className="px-2 py-1 text-right text-xs font-semibold text-red-600 bg-muted/30">
                                 {format(categoryTotal)}
                               </td>
                             </tr>
                           )
                         })}
                         <tr className="border-b-2 bg-red-100/50">
-                          <td className="sticky left-0 z-10 bg-red-100/50 px-4 py-2 font-semibold">
+                          <td className="sticky left-0 z-10 bg-red-100/50 px-2 py-1.5 font-semibold text-xs">
                             Total Expenses
                           </td>
                           {budgetData.forecastMonths.map(month => (
-                            <td key={month} className="px-4 py-2 text-right font-semibold text-red-700">
+                            <td key={month} className="px-1.5 py-1.5 text-right font-semibold text-red-700 text-xs">
                               {format(monthTotals[month]?.expenses || 0)}
                             </td>
                           ))}
-                          <td className="px-4 py-2 text-right font-semibold text-red-700 bg-muted/50">
+                          <td className="px-2 py-1.5 text-right font-semibold text-red-700 bg-muted/50 text-xs">
                             {format(budgetData.forecastMonths.reduce((sum, month) => 
                               sum + (monthTotals[month]?.expenses || 0), 0
                             ))}
@@ -1102,20 +1227,20 @@ export default function BudgetPage() {
 
                     {/* Net Budget */}
                     <tr className="border-t-4 bg-blue-50/50">
-                      <td className="sticky left-0 z-10 bg-blue-50/50 px-4 py-3 font-bold text-lg">
+                      <td className="sticky left-0 z-10 bg-blue-50/50 px-2 py-1.5 font-bold text-xs">
                         Net Cash Flow
                       </td>
                       {budgetData.forecastMonths.map(month => {
                         const net = monthTotals[month]?.net || 0
                         return (
-                          <td key={month} className="px-4 py-3 text-right font-bold text-lg" style={{
+                          <td key={month} className="px-1.5 py-1.5 text-right font-bold text-xs" style={{
                             color: net >= 0 ? '#16a34a' : '#dc2626'
                           }}>
                             {format(net)}
                           </td>
                         )
                       })}
-                      <td className="px-4 py-3 text-right font-bold text-lg bg-muted/50" style={{
+                      <td className="px-2 py-1.5 text-right font-bold text-xs bg-muted/50" style={{
                         color: budgetData.forecastMonths.reduce((sum, month) => 
                           sum + (monthTotals[month]?.net || 0), 0
                         ) >= 0 ? '#16a34a' : '#dc2626'
@@ -1129,18 +1254,25 @@ export default function BudgetPage() {
                     {/* Cash at End */}
                     {currentBalance !== null && (
                       <tr className="border-b-2 bg-blue-50/50">
-                        <td className="sticky left-0 z-10 bg-blue-50/50 px-4 py-2 font-semibold">
+                        <td className="sticky left-0 z-10 bg-blue-50/50 px-2 py-1.5 font-semibold text-xs">
                           Cash at End
                         </td>
                         {budgetData.forecastMonths.map(month => {
                           const end = budgetCashBalances[month]?.end ?? 0
+                          const color = end >= 0 ? '#16a34a' : '#dc2626'
                           return (
-                            <td key={month} className="px-4 py-2 text-right font-semibold text-blue-700">
+                            <td key={month} className="px-1.5 py-1.5 text-right font-semibold text-xs" style={{ color }}>
                               {format(end)}
                             </td>
                           )
                         })}
-                        <td className="px-4 py-2 text-right font-semibold text-blue-700 bg-muted/50">
+                        <td className="px-2 py-1.5 text-right font-semibold text-xs bg-muted/50" style={{
+                          color: budgetData.forecastMonths.length > 0 
+                            ? (budgetCashBalances[budgetData.forecastMonths[budgetData.forecastMonths.length - 1]]?.end ?? 0) >= 0 
+                              ? '#16a34a' 
+                              : '#dc2626'
+                            : '#6b7280'
+                        }}>
                           {budgetData.forecastMonths.length > 0 ? format(budgetCashBalances[budgetData.forecastMonths[budgetData.forecastMonths.length - 1]]?.end ?? 0) : '-'}
                         </td>
                       </tr>
@@ -1185,7 +1317,7 @@ export default function BudgetPage() {
           )}
 
           {/* Budget Forecast Chart */}
-          {chartData.labels.length > 0 && (
+          {chartData.labels.length > 0 ? (
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle>Budget Cash Flow Forecast</CardTitle>
@@ -1194,6 +1326,24 @@ export default function BudgetPage() {
               <CardContent>
                 <div style={{ height: '400px' }}>
                   <Line data={chartData} options={chartOptions} />
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="mb-6">
+              <CardHeader>
+                <CardTitle>Budget Cash Flow Forecast</CardTitle>
+                <CardDescription>Projected cash balance over the budget period.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>No chart data available.</p>
+                  <p className="text-sm mt-2">
+                    Debug: budgetData={budgetData ? 'exists' : 'null'}, 
+                    currentBalance={currentBalance !== null ? currentBalance : 'null'}, 
+                    forecastMonths={budgetData?.forecastMonths?.length || 0}, 
+                    monthTotals={Object.keys(monthTotals).length}
+                  </p>
                 </div>
               </CardContent>
             </Card>

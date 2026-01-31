@@ -67,6 +67,7 @@ export async function GET(req: Request) {
 
     // Try to load saved budget first
     let budgetData: any = null
+    let isSavedBudget = false
     try {
       const { data: savedBudget, error: loadError } = await supabase
         .from('Budget')
@@ -77,11 +78,75 @@ export async function GET(req: Request) {
       if (!loadError && savedBudget) {
         // Use saved budget - check if horizon matches
         if (savedBudget.horizon === horizon) {
+          // Always recalculate Planned Items from current PlannedIncome and PlannedExpenses tables
+          // This ensures that deleted/updated planned items are reflected in the budget
+          const mergedBudget = { ...(savedBudget.budget_data || {}) }
+          const forecastMonths = savedBudget.forecast_months || []
+          
+          forecastMonths.forEach(month => {
+            // Parse month key (YYYY-MM) to Date for comparison
+            const [year, monthNum] = month.split('-').map(Number)
+            const forecastDate = new Date(year, monthNum - 1, 1)
+            
+            // Calculate Planned Income for this month from current PlannedIncome table
+            let plannedIncomeForMonth = 0
+            plannedIncome?.forEach((pi: any) => {
+              const piDate = new Date(pi.expected_date)
+              const amount = Number(pi.amount || 0)
+              
+              if (pi.recurrence === 'monthly') {
+                // Monthly: add to all forecast months (starting from expected_date month)
+                if (forecastDate >= new Date(piDate.getFullYear(), piDate.getMonth(), 1)) {
+                  plannedIncomeForMonth += amount
+                }
+              } else if (pi.recurrence === 'one-off') {
+                // One-off: only add if the month matches exactly
+                if (piDate.getFullYear() === forecastDate.getFullYear() &&
+                    piDate.getMonth() === forecastDate.getMonth()) {
+                  plannedIncomeForMonth += amount
+                }
+              }
+            })
+
+            // Calculate Planned Expenses for this month from current PlannedExpenses table
+            let plannedExpensesForMonth = 0
+            plannedExpenses?.forEach((pe: any) => {
+              const peDate = new Date(pe.expected_date)
+              const amount = Number(pe.amount || 0)
+              
+              if (pe.recurrence === 'monthly') {
+                // Monthly: add to all forecast months (starting from expected_date month)
+                if (forecastDate >= new Date(peDate.getFullYear(), peDate.getMonth(), 1)) {
+                  plannedExpensesForMonth += amount
+                }
+              } else if (pe.recurrence === 'one-off') {
+                // One-off: only add if the month matches exactly
+                if (peDate.getFullYear() === forecastDate.getFullYear() &&
+                    peDate.getMonth() === forecastDate.getMonth()) {
+                  plannedExpensesForMonth += amount
+                }
+              }
+            })
+
+            // Always update Planned Items in budget (remove old values if no planned items exist)
+            if (!mergedBudget[month]) {
+              mergedBudget[month] = {}
+            }
+            
+            if (plannedIncomeForMonth > 0 || plannedExpensesForMonth > 0) {
+              mergedBudget[month]['Planned Items'] = { income: plannedIncomeForMonth, expenses: plannedExpensesForMonth }
+            } else {
+              // Remove Planned Items if none exist for this month
+              delete mergedBudget[month]['Planned Items']
+            }
+          })
+
           budgetData = {
-            budget: savedBudget.budget_data || {},
+            budget: mergedBudget,
             categoryGrowthRates: savedBudget.category_growth_rates || {},
-            forecastMonths: savedBudget.forecast_months || [],
+            forecastMonths: forecastMonths,
           }
+          isSavedBudget = true
         } else {
           // Horizon doesn't match, will generate new budget below
           budgetData = null
@@ -235,13 +300,18 @@ export async function GET(req: Request) {
             }
           })
 
-          // Add planned items to budget
+          // Always update Planned Items in budget (remove old values if no planned items exist)
           if (plannedIncomeForMonth > 0 || plannedExpensesForMonth > 0) {
             if (!budget[month]['Planned Items']) {
               budget[month]['Planned Items'] = { income: 0, expenses: 0 }
             }
-            budget[month]['Planned Items'].income += plannedIncomeForMonth
-            budget[month]['Planned Items'].expenses += plannedExpensesForMonth
+            budget[month]['Planned Items'].income = plannedIncomeForMonth
+            budget[month]['Planned Items'].expenses = plannedExpensesForMonth
+          } else {
+            // Remove Planned Items if none exist for this month
+            if (budget[month] && budget[month]['Planned Items']) {
+              delete budget[month]['Planned Items']
+            }
           }
         })
 
@@ -302,15 +372,44 @@ export async function GET(req: Request) {
     const allMonths = new Set<string>()
     Object.keys(actualsByMonth).forEach(m => allMonths.add(m))
     forecastMonths.forEach(m => allMonths.add(m))
+    // Always include current month
+    allMonths.add(currentMonth)
+    
+    // Fill gaps between last actual month and first forecast month
+    const actualMonthsList = Object.keys(actualsByMonth).sort()
+    const lastActualMonth = actualMonthsList.length > 0 ? actualMonthsList[actualMonthsList.length - 1] : null
+    const firstForecastMonth = forecastMonths.length > 0 ? forecastMonths[0] : null
+    
+    if (lastActualMonth && firstForecastMonth && lastActualMonth < firstForecastMonth) {
+      // Fill months between last actual and first forecast
+      const [lastYear, lastMonth] = lastActualMonth.split('-').map(Number)
+      const [firstYear, firstMonth] = firstForecastMonth.split('-').map(Number)
+      
+      let fillYear = lastYear
+      let fillMonth = lastMonth + 1
+      
+      while (fillYear < firstYear || (fillYear === firstYear && fillMonth < firstMonth)) {
+        const monthKey = `${fillYear}-${String(fillMonth).padStart(2, '0')}`
+        allMonths.add(monthKey)
+        
+        fillMonth++
+        if (fillMonth > 12) {
+          fillMonth = 1
+          fillYear++
+        }
+      }
+    }
+    
     const sortedMonths = Array.from(allMonths).sort()
 
     // Calculate starting balance (sum of all transactions up to last actual month)
     let startingBalance = 0
-    const lastActualMonth = sortedMonths.filter(m => actualsByMonth[m] && m <= currentMonth).pop()
-    if (lastActualMonth) {
+    // Use the last actual month that is <= currentMonth for balance calculation
+    const lastActualMonthForBalance = sortedMonths.filter(m => actualsByMonth[m] && m <= currentMonth).pop()
+    if (lastActualMonthForBalance) {
       transactions?.forEach((tx: any) => {
         const txMonth = (tx.booked_at || '').slice(0, 7)
-        if (txMonth <= lastActualMonth) {
+        if (txMonth <= lastActualMonthForBalance) {
           startingBalance += Number(tx.amount || 0)
         }
       })
@@ -318,11 +417,14 @@ export async function GET(req: Request) {
       startingBalance = currentBalance
     }
 
+    // Track the last actual balance to use as starting point for forecast
+    let lastActualBalance = startingBalance
     let runningBalance = startingBalance
 
     sortedMonths.forEach(month => {
       const isActual = actualsByMonth[month] !== undefined
       const isFuture = month > currentMonth
+      const isCurrentMonth = month === currentMonth
 
       if (isActual && !isFuture) {
         // Past/current month with actuals
@@ -336,6 +438,7 @@ export async function GET(req: Request) {
           }
         })
         runningBalance = monthBalance
+        lastActualBalance = monthBalance // Update last actual balance
 
         rollingForecast.push({
           month,
@@ -346,63 +449,131 @@ export async function GET(req: Request) {
           balance: runningBalance,
           byCategory: actual.byCategory,
         })
+      } else if (isCurrentMonth && !isActual) {
+        // Current month without actuals yet - use zero or last balance
+        rollingForecast.push({
+          month,
+          type: 'actual',
+          income: 0,
+          expenses: 0,
+          net: 0,
+          balance: runningBalance,
+          byCategory: {},
+        })
+        lastActualBalance = runningBalance // Update last actual balance
       } else if (isFuture && budgetData?.budget[month]) {
+        // For forecast months, always start from the last actual balance
+        // Reset runningBalance to lastActualBalance for the first forecast month
+        const isFirstForecastMonth = rollingForecast.filter(f => f.type === 'forecast').length === 0
+        if (isFirstForecastMonth) {
+          runningBalance = lastActualBalance
+        }
         // Future month with budget
         const budgetMonth = budgetData.budget[month]
+        
+        // Debug: log budget data for first forecast month
+        if (isFirstForecastMonth) {
+          console.log(`[Rolling Forecast] ===== FIRST FORECAST MONTH ${month} =====`)
+          console.log(`[Rolling Forecast] Last actual balance: ${lastActualBalance}`)
+          console.log(`[Rolling Forecast] Starting balance: ${runningBalance}`)
+          console.log(`[Rolling Forecast] Budget data:`, JSON.stringify(budgetMonth, null, 2))
+        }
+        
         let monthIncome = 0
         let monthExpenses = 0
         const monthByCategory: Record<string, { income: number; expenses: number }> = {}
 
         Object.keys(budgetMonth).forEach(category => {
           const catData = budgetMonth[category]
-          monthIncome += catData.income || 0
-          monthExpenses += catData.expenses || 0
+          
+          // Skip if catData is not an object
+          if (!catData || typeof catData !== 'object') {
+            console.warn(`[Rolling Forecast] Invalid category data for ${category} in ${month}:`, catData)
+            return
+          }
+          
+          // Validate and ensure values are numbers and reasonable
+          // Cap at 1 billion per category per month (much more reasonable)
+          const maxValue = 1e9
+          const income = typeof catData?.income === 'number' && !isNaN(catData.income) && isFinite(catData.income) 
+            ? Math.max(0, Math.min(catData.income, maxValue))
+            : 0
+          const expenses = typeof catData?.expenses === 'number' && !isNaN(catData.expenses) && isFinite(catData.expenses)
+            ? Math.max(0, Math.min(catData.expenses, maxValue))
+            : 0
+          
+          // Warn if values seem too large or if original was capped
+          if (catData?.income > maxValue || catData?.expenses > maxValue) {
+            console.error(`[Rolling Forecast] CAPPED large values for ${category} in ${month}: original income=${catData?.income}, expenses=${catData?.expenses}, capped to ${income}/${expenses}`)
+          } else if (income > 1e6 || expenses > 1e6) {
+            console.warn(`[Rolling Forecast] Large values for ${category} in ${month}: income=${income}, expenses=${expenses}`)
+          }
+          
+          monthIncome += income
+          monthExpenses += expenses
           monthByCategory[category] = {
-            income: catData.income || 0,
-            expenses: catData.expenses || 0,
+            income,
+            expenses,
           }
         })
 
-        // Add Planned Items for this month (if not already in budget)
-        const [year, monthNum] = month.split('-').map(Number)
-        const forecastDate = new Date(year, monthNum - 1, 1)
-        
-        let plannedIncomeForMonth = 0
-        plannedIncome?.forEach((pi: any) => {
-          const piDate = new Date(pi.expected_date)
-          if (pi.recurrence === 'monthly' || 
-              (pi.recurrence === 'one-off' && 
-               piDate.getFullYear() === forecastDate.getFullYear() &&
-               piDate.getMonth() === forecastDate.getMonth())) {
-            plannedIncomeForMonth += Number(pi.amount || 0)
-          }
-        })
+        // If using saved budget, Planned Items are already included in budgetMonth
+        // Only add Planned Items if we generated the budget on the fly (not saved)
+        if (!isSavedBudget) {
+          const [year, monthNum] = month.split('-').map(Number)
+          const forecastDate = new Date(year, monthNum - 1, 1)
+          
+          let plannedIncomeForMonth = 0
+          plannedIncome?.forEach((pi: any) => {
+            const piDate = new Date(pi.expected_date)
+            if (pi.recurrence === 'monthly' || 
+                (pi.recurrence === 'one-off' && 
+                 piDate.getFullYear() === forecastDate.getFullYear() &&
+                 piDate.getMonth() === forecastDate.getMonth())) {
+              plannedIncomeForMonth += Number(pi.amount || 0)
+            }
+          })
 
-        let plannedExpensesForMonth = 0
-        plannedExpenses?.forEach((pe: any) => {
-          const peDate = new Date(pe.expected_date)
-          if (pe.recurrence === 'monthly' ||
-              (pe.recurrence === 'one-off' &&
-               peDate.getFullYear() === forecastDate.getFullYear() &&
-               peDate.getMonth() === forecastDate.getMonth())) {
-            plannedExpensesForMonth += Number(pe.amount || 0)
-          }
-        })
+          let plannedExpensesForMonth = 0
+          plannedExpenses?.forEach((pe: any) => {
+            const peDate = new Date(pe.expected_date)
+            if (pe.recurrence === 'monthly' ||
+                (pe.recurrence === 'one-off' &&
+                 peDate.getFullYear() === forecastDate.getFullYear() &&
+                 peDate.getMonth() === forecastDate.getMonth())) {
+              plannedExpensesForMonth += Number(pe.amount || 0)
+            }
+          })
 
-        // Add planned items to totals and category breakdown
-        monthIncome += plannedIncomeForMonth
-        monthExpenses += plannedExpensesForMonth
-        
-        if (plannedIncomeForMonth > 0 || plannedExpensesForMonth > 0) {
+          // Add planned items to totals and category breakdown (only if not already in budget)
           if (!monthByCategory['Planned Items']) {
-            monthByCategory['Planned Items'] = { income: 0, expenses: 0 }
+            monthIncome += plannedIncomeForMonth
+            monthExpenses += plannedExpensesForMonth
+            
+            if (plannedIncomeForMonth > 0 || plannedExpensesForMonth > 0) {
+              monthByCategory['Planned Items'] = {
+                income: plannedIncomeForMonth,
+                expenses: plannedExpensesForMonth,
+              }
+            }
           }
-          monthByCategory['Planned Items'].income += plannedIncomeForMonth
-          monthByCategory['Planned Items'].expenses += plannedExpensesForMonth
         }
 
         const monthNet = monthIncome - monthExpenses
+        const balanceBefore = runningBalance
         runningBalance += monthNet
+
+        // Validate balance is reasonable (not trillions)
+        if (Math.abs(runningBalance) > 1e12) {
+          console.error(`[Rolling Forecast] Suspicious balance for ${month}: ${runningBalance}. Income: ${monthIncome}, Expenses: ${monthExpenses}, Net: ${monthNet}, Last actual balance: ${lastActualBalance}`)
+          // Reset to last actual balance + net if balance is too large
+          runningBalance = lastActualBalance + monthNet
+        }
+
+        // Log for first few forecast months
+        if (isFirstForecastMonth || rollingForecast.filter(f => f.type === 'forecast').length < 3) {
+          console.log(`[Rolling Forecast] ${month}: Income=${monthIncome}, Expenses=${monthExpenses}, Net=${monthNet}, Balance: ${balanceBefore} -> ${runningBalance}`)
+        }
 
         rollingForecast.push({
           month,
@@ -415,6 +586,12 @@ export async function GET(req: Request) {
         })
       } else if (isFuture) {
         // Future month without budget - use planned items only
+        // For first forecast month without budget, start from last actual balance
+        const isFirstForecastMonth = rollingForecast.filter(f => f.type === 'forecast').length === 0
+        if (isFirstForecastMonth) {
+          runningBalance = lastActualBalance
+        }
+        
         const [year, monthNum] = month.split('-').map(Number)
         const forecastDate = new Date(year, monthNum - 1, 1)
         

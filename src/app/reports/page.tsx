@@ -302,9 +302,6 @@ export default function ReportsPage() {
           <Button variant="outline" onClick={() => router.push('/')}>Dashboard</Button>
         </div>
         <div className="flex gap-2 items-center">
-          <Button variant={noCents ? 'default' : 'outline'} onClick={() => setNoCents(v => !v)} title="Toggle cents">
-            {noCents ? 'No cents' : 'Show cents'}
-          </Button>
           <Button variant={period==='all'?'default':'outline'} onClick={() => setPeriod('all')}>All</Button>
           <Button variant={period==='year'?'default':'outline'} onClick={() => setPeriod('year')}>Year</Button>
           <Button variant={period==='quarter'?'default':'outline'} onClick={() => setPeriod('quarter')}>Quarter</Button>

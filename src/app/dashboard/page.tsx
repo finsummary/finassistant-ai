@@ -4,11 +4,14 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { LoadingSpinner } from '@/components/ui/loading';
 import { useToast } from '@/components/ui/toast';
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { User } from 'lucide-react';
+import { User, TrendingUp, TrendingDown, Wallet, Search, Calendar, FileText, Download, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 type Transaction = {
     id: string
@@ -200,12 +203,16 @@ export default function Dashboard({ user }: { user?: any }) {
             return i2
         })()
         const idxAmt = findIdx(['amount','amt','value'])
-        const idxPaidIn  = findIdx(['paid in','money in','credit','credit amount'])
-        const idxPaidOut = findIdx(['paid out','money out','debit','debit amount'])
+        const idxPaidIn  = findIdx(['paid in','money in','credit','credit amount','paidin'])
+        const idxPaidOut = findIdx(['paid out','money out','debit','debit amount','paidout'])
         const idxCurr = findIdx(['currency','curr','transaction currency'])
         const idxStatus = findIdx(['status'])
-        if (idxDate < 0 || (idxAmt < 0 && (idxPaidIn < 0 && idxPaidOut < 0))) {
-            addToast('CSV must include Date and either Amount or Paid in/Paid out columns', 'error')
+        if (idxDate < 0) {
+            addToast('CSV must include a Date column. Found headers: ' + rawHeaders.join(', '), 'error')
+            return
+        }
+        if (idxAmt < 0 && (idxPaidIn < 0 && idxPaidOut < 0)) {
+            addToast('CSV must include either Amount or Paid in/Paid out columns. Found headers: ' + rawHeaders.join(', '), 'error')
             return
         }
         const items: any[] = []
@@ -218,7 +225,9 @@ export default function Dashboard({ user }: { user?: any }) {
             }
             let dateRaw = String(idxDate >= 0 ? (cols[idxDate] || '') : '')
             dateRaw = dateRaw.replace(/^\uFEFF/, '').trim()
-            const date = /^\d{4}-\d{2}-\d{2}\b/.test(dateRaw) ? dateRaw.slice(0,10) : dateRaw
+            // Extract date from datetime format (e.g., "2026-01-12 02:48:31" -> "2026-01-12")
+            const dateMatch = dateRaw.match(/^(\d{4}-\d{2}-\d{2})/)
+            const date = dateMatch ? dateMatch[1] : (/^\d{4}-\d{2}-\d{2}\b/.test(dateRaw) ? dateRaw.slice(0,10) : dateRaw)
             let description = idxDesc >= 0 ? String(cols[idxDesc] || '') : ''
             const idxRef = findIdx(['reference'])
             if ((!description || description.trim().length < 2) && idxRef >= 0) {
@@ -240,7 +249,9 @@ export default function Dashboard({ user }: { user?: any }) {
             } else {
                 const inVal  = idxPaidIn  >= 0 ? (parseAmountSmart(cols[idxPaidIn])  || 0) : 0
                 const outVal = idxPaidOut >= 0 ? (parseAmountSmart(cols[idxPaidOut]) || 0) : 0
-                if (inVal || outVal) amount = inVal - outVal
+                // If both are 0, skip this row (no transaction)
+                if (inVal === 0 && outVal === 0) continue
+                amount = inVal - outVal
             }
             if (amount === null) continue
             const currency = (idxCurr >= 0 ? (cols[idxCurr] || '') : importCurrency).toUpperCase()
@@ -327,12 +338,27 @@ export default function Dashboard({ user }: { user?: any }) {
             </div>
 
             <div className="mb-6 flex gap-2 items-center flex-wrap">
-                <Button variant={period === 'all' ? 'default' : 'outline'} onClick={() => setPeriod('all')}>All</Button>
-                <Button variant={period === 'year' ? 'default' : 'outline'} onClick={() => setPeriod('year')}>Year</Button>
-                <Button variant={period === 'quarter' ? 'default' : 'outline'} onClick={() => setPeriod('quarter')}>Quarter</Button>
-                <Button variant="outline" onClick={() => { window.location.href = '/settings/categories' }}>Categories</Button>
-                <div className="ml-2">
-                    <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search description" className="w-56" />
+                <div className="flex gap-2 items-center">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <Button variant={period === 'all' ? 'default' : 'outline'} size="sm" onClick={() => setPeriod('all')}>All</Button>
+                    <Button variant={period === 'year' ? 'default' : 'outline'} size="sm" onClick={() => setPeriod('year')}>Year</Button>
+                    <Button variant={period === 'quarter' ? 'default' : 'outline'} size="sm" onClick={() => setPeriod('quarter')}>Quarter</Button>
+                </div>
+                <Separator orientation="vertical" className="h-6" />
+                <Button variant="outline" size="sm" onClick={() => { window.location.href = '/settings/categories' }}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Categories
+                </Button>
+                <div className="ml-auto flex items-center gap-2">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input 
+                            value={search} 
+                            onChange={(e) => setSearch(e.target.value)} 
+                            placeholder="Search transactions..." 
+                            className="w-64 pl-9" 
+                        />
+                    </div>
                 </div>
             </div>
             
@@ -351,18 +377,51 @@ export default function Dashboard({ user }: { user?: any }) {
                                     const totals = computeTotals(accTx)
                                     return (
                                         <li key={acc.id} className="border-b py-2">
-                                            <button className="w-full text-left" onClick={() => toggleExpanded(acc.id)}>
+                                            <button className="w-full text-left hover:bg-muted/50 rounded-lg p-2 transition-colors" onClick={() => toggleExpanded(acc.id)}>
                                                 <div className="flex items-center justify-between">
-                                                    <span>{acc.account_name} ({acc.currency})</span>
-                                                    <span className="text-sm text-muted-foreground">{isOpen ? 'Hide' : 'Show'} transactions ({accTx.length})</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <Wallet className="h-5 w-5 text-muted-foreground" />
+                                                        <span className="font-semibold">{acc.account_name}</span>
+                                                        <Badge variant="secondary" className="text-xs">{acc.currency}</Badge>
+                                                    </div>
+                                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                                        <span>{accTx.length} transaction{accTx.length !== 1 ? 's' : ''}</span>
+                                                        {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                                    </div>
                                                 </div>
                                             </button>
-                                            <div className="mt-2 flex gap-2 flex-wrap items-center">
-                                                <span className="text-sm text-muted-foreground">
-                                                    Total: {totals.total.toFixed(2)} {acc.currency} | Income: {totals.income.toFixed(2)} {acc.currency} | Expenses: {totals.expense.toFixed(2)} {acc.currency}
-                                                </span>
-                                                <Button variant="outline" size="sm" onClick={() => exportCsv(accTx, acc.account_name)}>Export CSV</Button>
-                                                <Button variant="outline" size="sm" disabled={!!deleting[acc.id]} onClick={async () => {
+                                            <div className="mt-3 flex gap-3 flex-wrap items-center">
+                                                <div className="flex gap-3 items-center">
+                                                    <Badge variant="outline" className="font-normal">
+                                                        <Wallet className="h-3 w-3 mr-1" />
+                                                        Total: {totals.total.toFixed(2)} {acc.currency}
+                                                    </Badge>
+                                                    <Badge variant="outline" className="font-normal text-green-600 border-green-200">
+                                                        <TrendingUp className="h-3 w-3 mr-1" />
+                                                        Income: {totals.income.toFixed(2)} {acc.currency}
+                                                    </Badge>
+                                                    <Badge variant="outline" className="font-normal text-red-600 border-red-200">
+                                                        <TrendingDown className="h-3 w-3 mr-1" />
+                                                        Expenses: {totals.expense.toFixed(2)} {acc.currency}
+                                                    </Badge>
+                                                </div>
+                                                <div className="ml-auto flex gap-2">
+                                                    <TooltipProvider>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Button variant="outline" size="sm" onClick={() => exportCsv(accTx, acc.account_name)}>
+                                                                    <Download className="h-4 w-4" />
+                                                                </Button>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                <p>Export CSV</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
+                                                    <TooltipProvider>
+                                                        <Tooltip>
+                                                            <TooltipTrigger asChild>
+                                                                <Button variant="outline" size="sm" disabled={!!deleting[acc.id]} onClick={async () => {
                                                     if (!confirm('Delete this account and its transactions?')) return
                                                     try {
                                                         setDeleting(prev => ({ ...prev, [acc.id]: true }))
@@ -391,7 +450,16 @@ export default function Dashboard({ user }: { user?: any }) {
                                                     } finally {
                                                         setDeleting(prev => ({ ...prev, [acc.id]: false }))
                                                     }
-                                                }}>Delete</Button>
+                                                }}>
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </Button>
+                                                            </TooltipTrigger>
+                                                            <TooltipContent>
+                                                                <p>Delete Account</p>
+                                                            </TooltipContent>
+                                                        </Tooltip>
+                                                    </TooltipProvider>
+                                                </div>
                                             </div>
                                             {isOpen && (
                                                 <div className="mt-3 overflow-x-auto">

@@ -60,15 +60,101 @@ export async function POST(req: Request) {
       }, { status: 200 })
     }
 
-    // Calculate monthly growth rates per category
-    // For each category, calculate average month-over-month change rate
-    const categoryGrowthRates: Record<string, { incomeRate: number; expenseRate: number; lastValue: { income: number; expenses: number } }> = {}
+    // Calculate monthly growth rates per category using trend detection
+    // Uses smoothing + regression + trimmed percent changes to avoid last-month noise
+    const categoryGrowthRates: Record<string, {
+      incomeRate: number
+      expenseRate: number
+      lastValue: { income: number; expenses: number }
+      baselineValue?: { income: number; expenses: number }
+      trend?: {
+        income: { direction: 'up' | 'down' | 'flat'; strength: number; volatility: number; windowMonths: number; method: string }
+        expense: { direction: 'up' | 'down' | 'flat'; strength: number; volatility: number; windowMonths: number; method: string }
+      }
+    }> = {}
     const allCategories = new Set<string>()
 
     // Collect all categories
     months.forEach(month => {
       Object.keys(monthlyCategoryData[month]).forEach(cat => allCategories.add(cat))
     })
+
+    // Helper functions for trend detection
+    const mean = (values: number[]) => values.length === 0 ? 0 : values.reduce((s, v) => s + v, 0) / values.length
+    const standardDeviation = (values: number[]) => {
+      if (values.length < 2) return 0
+      const avg = mean(values)
+      const variance = values.reduce((s, v) => s + Math.pow(v - avg, 2), 0) / values.length
+      return Math.sqrt(variance)
+    }
+    const trimmedMean = (values: number[], trimPct: number = 0.2) => {
+      if (values.length === 0) return 0
+      if (values.length < 5) return mean(values)
+      const sorted = [...values].sort((a, b) => a - b)
+      const trimCount = Math.floor(sorted.length * trimPct)
+      const trimmed = sorted.slice(trimCount, sorted.length - trimCount)
+      return mean(trimmed)
+    }
+    const movingAverage = (values: number[], windowSize: number) => {
+      if (values.length === 0) return []
+      const window = Math.max(1, Math.min(windowSize, values.length))
+      return values.map((_, idx) => {
+        const start = Math.max(0, idx - window + 1)
+        const slice = values.slice(start, idx + 1)
+        return mean(slice)
+      })
+    }
+    const linearRegressionSlope = (values: number[]) => {
+      const n = values.length
+      if (n < 2) return 0
+      const xMean = (n - 1) / 2
+      const yMean = mean(values)
+      let num = 0
+      let den = 0
+      for (let i = 0; i < n; i++) {
+        num += (i - xMean) * (values[i] - yMean)
+        den += Math.pow(i - xMean, 2)
+      }
+      return den === 0 ? 0 : num / den
+    }
+    const computeTrend = (series: number[], windowMonths: number) => {
+      const lastActual = series[series.length - 1] || 0
+      const windowed = series.slice(Math.max(0, series.length - windowMonths))
+      const smoothed = movingAverage(windowed, 3)
+      const pctChanges: number[] = []
+      for (let i = 1; i < smoothed.length; i++) {
+        const prev = smoothed[i - 1]
+        const curr = smoothed[i]
+        if (prev > 0) {
+          pctChanges.push(((curr - prev) / prev) * 100)
+        } else if (prev === 0 && curr > 0) {
+          pctChanges.push(0)
+        }
+      }
+      const avgPct = trimmedMean(pctChanges, 0.2)
+      const slope = linearRegressionSlope(smoothed)
+      const lastSmoothed = smoothed[smoothed.length - 1] || 0
+      const slopeRate = lastSmoothed > 0 ? (slope / lastSmoothed) * 100 : 0
+      let combinedRate = (avgPct * 0.6) + (slopeRate * 0.4)
+      const volatility = standardDeviation(pctChanges)
+      const stabilityFactor = Math.max(0.3, 1 - Math.min(volatility / 100, 0.7))
+      combinedRate = combinedRate * stabilityFactor
+      const cappedRate = Math.max(-50, Math.min(50, combinedRate))
+      const direction: 'up' | 'down' | 'flat' = Math.abs(cappedRate) < 1 ? 'flat' : (cappedRate > 0 ? 'up' : 'down')
+      const strength = Math.abs(cappedRate)
+      return {
+        rate: cappedRate,
+        baseline: lastSmoothed,
+        lastActual,
+        trend: {
+          direction,
+          strength,
+          volatility,
+          windowMonths: windowed.length,
+          method: 'smoothed-trend'
+        }
+      }
+    }
 
     // Calculate growth rates for each category
     allCategories.forEach(category => {
@@ -79,46 +165,25 @@ export async function POST(req: Request) {
         monthlyValues.push(values)
       })
 
-      // Calculate average growth rate (month-over-month)
-      // Use geometric mean for more stable growth rates
-      let incomeRates: number[] = []
-      let expenseRates: number[] = []
-
-      for (let i = 1; i < monthlyValues.length; i++) {
-        const prev = monthlyValues[i - 1]
-        const curr = monthlyValues[i]
-
-        // Income growth rate
-        if (prev.income > 0 && curr.income >= 0) {
-          const rate = ((curr.income - prev.income) / prev.income) * 100
-          incomeRates.push(rate)
-        } else if (prev.income === 0 && curr.income > 0) {
-          // New category appeared - use a conservative growth rate
-          incomeRates.push(0) // Don't assume infinite growth
-        }
-
-        // Expense growth rate
-        if (prev.expenses > 0 && curr.expenses >= 0) {
-          const rate = ((curr.expenses - prev.expenses) / prev.expenses) * 100
-          expenseRates.push(rate)
-        } else if (prev.expenses === 0 && curr.expenses > 0) {
-          expenseRates.push(0) // Don't assume infinite growth
-        }
-      }
-
-      // Calculate average (arithmetic mean)
-      const avgIncomeRate = incomeRates.length > 0 
-        ? incomeRates.reduce((sum, r) => sum + r, 0) / incomeRates.length 
-        : 0
-      const avgExpenseRate = expenseRates.length > 0 
-        ? expenseRates.reduce((sum, r) => sum + r, 0) / expenseRates.length 
-        : 0
+      const windowMonths = Math.min(6, monthlyValues.length)
+      const incomeSeries = monthlyValues.map(v => v.income)
+      const expenseSeries = monthlyValues.map(v => v.expenses)
+      const incomeTrend = computeTrend(incomeSeries, windowMonths)
+      const expenseTrend = computeTrend(expenseSeries, windowMonths)
       const lastValue = monthlyValues[monthlyValues.length - 1]
 
       categoryGrowthRates[category] = {
-        incomeRate: avgIncomeRate,
-        expenseRate: avgExpenseRate,
+        incomeRate: incomeTrend.rate,
+        expenseRate: expenseTrend.rate,
         lastValue,
+        baselineValue: {
+          income: incomeTrend.baseline,
+          expenses: expenseTrend.baseline,
+        },
+        trend: {
+          income: incomeTrend.trend,
+          expense: expenseTrend.trend,
+        },
       }
     })
 
@@ -187,15 +252,31 @@ export async function POST(req: Request) {
         // Apply growth rate to last known value
         // For current month (index 0), use last value directly (monthsAhead = 0)
         // For future months, apply rate N times (compounding)
-        const incomeGrowthFactor = Math.pow(1 + (rates.incomeRate / 100), monthsAhead)
-        const expenseGrowthFactor = Math.pow(1 + (rates.expenseRate / 100), monthsAhead)
+        
+        // Cap growth rates to prevent exponential explosion
+        const cappedIncomeRate = Math.max(-50, Math.min(50, rates.incomeRate)) // -50% to +50% max
+        const cappedExpenseRate = Math.max(-50, Math.min(50, rates.expenseRate)) // -50% to +50% max
+        
+        const incomeGrowthFactor = Math.pow(1 + (cappedIncomeRate / 100), monthsAhead)
+        const expenseGrowthFactor = Math.pow(1 + (cappedExpenseRate / 100), monthsAhead)
+        
+        // Validate base values are reasonable
+        const incomeBase = Math.max(0, Math.min(1e9, rates.baselineValue?.income ?? rates.lastValue.income ?? 0))
+        const expenseBase = Math.max(0, Math.min(1e9, rates.baselineValue?.expenses ?? rates.lastValue.expenses ?? 0))
 
-        const projectedIncome = rates.lastValue.income * incomeGrowthFactor
-        const projectedExpenses = rates.lastValue.expenses * expenseGrowthFactor
+        const projectedIncome = incomeBase * incomeGrowthFactor
+        const projectedExpenses = expenseBase * expenseGrowthFactor
 
+        // Cap projected values to prevent unreasonable numbers
+        const maxProjectedValue = 1e9 // 1 billion max per category per month
         budget[month][category] = {
-          income: Math.max(0, projectedIncome), // Don't allow negative
-          expenses: Math.max(0, projectedExpenses),
+          income: Math.max(0, Math.min(maxProjectedValue, projectedIncome)),
+          expenses: Math.max(0, Math.min(maxProjectedValue, projectedExpenses)),
+        }
+        
+        // Warn if values seem unreasonable
+        if (projectedIncome > 1e6 || projectedExpenses > 1e6) {
+          console.warn(`[Budget Generate] Large projected values for ${category} in ${month}: income=${projectedIncome}, expenses=${projectedExpenses}, base=${incomeBase}/${expenseBase}, rate=${cappedIncomeRate}/${cappedExpenseRate}%, monthsAhead=${monthsAhead}`)
         }
       })
 

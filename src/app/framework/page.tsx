@@ -3,6 +3,9 @@
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { LoadingSpinner } from '@/components/ui/loading'
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -10,6 +13,7 @@ import { AIAssistant } from './ai-assistant'
 import { formatCurrency, getCurrencySymbol } from '@/lib/currency'
 import { Line } from 'react-chartjs-2'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
+import { TrendingUp, TrendingDown, AlertTriangle, Target, BarChart3, ArrowRight, Wallet } from 'lucide-react'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
@@ -92,11 +96,11 @@ export default function FrameworkPage() {
   }, [])
 
   const steps = [
-    { id: 'state', label: 'STATE', description: 'Where am I now?' },
-    { id: 'delta', label: 'DELTA', description: 'What changed?' },
-    { id: 'trajectory', label: 'TRAJECTORY', description: 'Where am I heading?' },
-    { id: 'exposure', label: 'EXPOSURE', description: 'What could break?' },
-    { id: 'choice', label: 'CHOICE', description: 'What should I do next?' },
+    { id: 'state', label: 'STATE', description: 'Where am I now?', icon: BarChart3 },
+    { id: 'delta', label: 'DELTA', description: 'What changed?', icon: TrendingUp },
+    { id: 'trajectory', label: 'TRAJECTORY', description: 'Where am I heading?', icon: ArrowRight },
+    { id: 'exposure', label: 'EXPOSURE', description: 'What could break?', icon: AlertTriangle },
+    { id: 'choice', label: 'CHOICE', description: 'What should I do next?', icon: Target },
   ] as const
 
   if (isLoading) {
@@ -128,7 +132,10 @@ export default function FrameworkPage() {
   return (
     <div className="p-4 md:p-8">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Financial Framework</h1>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Financial Framework</h1>
+          <p className="text-sm text-muted-foreground mt-1">Comprehensive financial analysis and decision support</p>
+        </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             Dashboard
@@ -136,34 +143,49 @@ export default function FrameworkPage() {
         </div>
       </div>
 
-      {/* Step Navigation */}
-      <div className="mb-8 flex flex-wrap gap-2">
-        {steps.map((step) => (
-          <Button
-            key={step.id}
-            variant={activeStep === step.id ? 'default' : 'outline'}
-            onClick={() => setActiveStep(step.id)}
-            className="flex flex-col items-start h-auto py-3 px-4"
-          >
-            <span className="font-semibold">{step.label}</span>
-            <span className="text-xs text-muted-foreground">{step.description}</span>
-          </Button>
-        ))}
-      </div>
+      {/* Step Navigation with Tabs */}
+      <Tabs value={activeStep} onValueChange={(value) => setActiveStep(value as typeof activeStep)} className="mb-8">
+        <TabsList className="grid w-full grid-cols-5 h-auto p-1 bg-muted/50">
+          {steps.map((step) => {
+            const Icon = step.icon
+            return (
+              <TabsTrigger
+                key={step.id}
+                value={step.id}
+                className="flex flex-col items-center gap-1 py-3 px-4 data-[state=active]:bg-background data-[state=active]:shadow-sm transition-all"
+              >
+                <Icon className="h-4 w-4" />
+                <span className="font-semibold text-xs">{step.label}</span>
+                <span className="text-[10px] text-muted-foreground hidden sm:block">{step.description}</span>
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
 
-      {/* Step Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {activeStep === 'state' && <StateStep data={data.state} />}
-          {activeStep === 'delta' && <DeltaStep data={data.delta} currency={data.currency} />}
-          {activeStep === 'trajectory' && <TrajectoryStep data={data.trajectory} currency={data.currency} />}
-          {activeStep === 'exposure' && <ExposureStep data={data.exposure} currency={data.currency} />}
-          {activeStep === 'choice' && <ChoiceStep data={data.choice} />}
+        {/* Step Content */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          <div className="lg:col-span-2 space-y-6">
+            <TabsContent value="state" className="mt-0">
+              <StateStep data={data.state} />
+            </TabsContent>
+            <TabsContent value="delta" className="mt-0">
+              <DeltaStep data={data.delta} currency={data.currency} />
+            </TabsContent>
+            <TabsContent value="trajectory" className="mt-0">
+              <TrajectoryStep data={data.trajectory} currency={data.currency} />
+            </TabsContent>
+            <TabsContent value="exposure" className="mt-0">
+              <ExposureStep data={data.exposure} currency={data.currency} />
+            </TabsContent>
+            <TabsContent value="choice" className="mt-0">
+              <ChoiceStep data={data.choice} />
+            </TabsContent>
+          </div>
+          <div className="lg:col-span-1">
+            <AIAssistant currentStep={activeStep} />
+          </div>
         </div>
-        <div className="lg:col-span-1">
-          <AIAssistant currentStep={activeStep} />
-        </div>
-      </div>
+      </Tabs>
     </div>
   )
 }
@@ -172,6 +194,34 @@ function StateStep({ data }: { data: any }) {
   const currency = data?.currency || 'GBP'
   const currentDate = data?.currentDate || new Date().toISOString().split('T')[0]
   const formatValue = (value: number) => formatCurrency(value, currency, true)
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
+  const [loadingAnalysis, setLoadingAnalysis] = useState(true)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadAIAnalysis = async () => {
+      setLoadingAnalysis(true)
+      setAnalysisError(null)
+      try {
+        const res = await fetch('/api/framework/state/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh: false }), // Initial load uses cache
+        })
+        const json = await res.json()
+        if (json?.ok) {
+          setAiAnalysis(json.data)
+        } else {
+          setAnalysisError(json?.error || 'Failed to load AI analysis')
+        }
+      } catch (e: any) {
+        setAnalysisError(e.message || 'Failed to load AI analysis')
+      } finally {
+        setLoadingAnalysis(false)
+      }
+    }
+    loadAIAnalysis()
+  }, [])
 
   const hasNoData = !data || (data.currentBalance === 0 && (!data.kpis?.month?.income && !data.kpis?.month?.expenses))
   
@@ -204,75 +254,117 @@ function StateStep({ data }: { data: any }) {
   const expenseCategories = data?.expenseCategories || []
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>STATE — Where am I now?</CardTitle>
-        <CardDescription>
-          Current cash position and summary • As of {new Date(currentDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-        </CardDescription>
+    <Card className="border-2 shadow-sm hover:shadow-md transition-shadow">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5 text-primary" />
+            <CardTitle className="text-xl">STATE — Where am I now?</CardTitle>
+          </div>
+          {currentDate && (
+            <Badge variant="outline" className="text-xs">
+              {new Date(currentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </Badge>
+          )}
+        </div>
+        <CardDescription className="mt-1">Current cash position and summary</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Current Cash Balance - Prominent Display */}
-        <div className="bg-muted/50 p-4 rounded-lg border-2">
-          <p className="text-sm text-muted-foreground mb-1">Current Cash Balance</p>
-          <p className="text-4xl font-bold">{formatValue(data.currentBalance || 0)}</p>
+        <div className="text-center p-8 bg-gradient-to-br from-primary/5 to-primary/10 rounded-lg border-2 border-primary/20 shadow-sm">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Wallet className="h-6 w-6 text-primary" />
+            <p className="text-4xl font-bold tracking-tight">{formatValue(data.currentBalance || 0)}</p>
+          </div>
+          <p className="text-sm font-medium text-muted-foreground">Current Cash Balance</p>
         </div>
 
-        {/* Summary Table - Month, Quarter, YTD */}
+        {/* Summary Cards - Month, Quarter, YTD */}
         <div>
-          <h3 className="text-lg font-semibold mb-4">Summary</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2 px-3 text-sm font-medium text-muted-foreground">Period</th>
-                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Income</th>
-                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Expenses</th>
-                  <th className="text-right py-2 px-3 text-sm font-medium text-muted-foreground">Net Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Month */}
-                <tr className="border-b hover:bg-muted/50">
-                  <td className="py-3 px-3 font-medium">This Month</td>
-                  <td className="py-3 px-3 text-right text-green-600">{formatValue(month.income)}</td>
-                  <td className="py-3 px-3 text-right text-red-600">{formatValue(month.expenses)}</td>
-                  <td className={`py-3 px-3 text-right font-semibold ${month.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {month.net >= 0 ? '+' : ''}{formatValue(month.net)}
-                  </td>
-                </tr>
-                {/* Quarter */}
-                <tr className="border-b hover:bg-muted/50">
-                  <td className="py-3 px-3 font-medium">This Quarter</td>
-                  <td className="py-3 px-3 text-right text-green-600">{formatValue(quarter.income)}</td>
-                  <td className="py-3 px-3 text-right text-red-600">{formatValue(quarter.expenses)}</td>
-                  <td className={`py-3 px-3 text-right font-semibold ${quarter.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {quarter.net >= 0 ? '+' : ''}{formatValue(quarter.net)}
-                  </td>
-                </tr>
-                {/* YTD */}
-                <tr className="border-b-2 hover:bg-muted/50 font-semibold">
-                  <td className="py-3 px-3">Year to Date</td>
-                  <td className="py-3 px-3 text-right text-green-600">{formatValue(ytd.income)}</td>
-                  <td className="py-3 px-3 text-right text-red-600">{formatValue(ytd.expenses)}</td>
-                  <td className={`py-3 px-3 text-right ${ytd.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {ytd.net >= 0 ? '+' : ''}{formatValue(ytd.net)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Summary
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="border-2 hover:border-primary/50 transition-colors">
+              <CardContent className="p-4">
+                <p className="text-sm font-medium text-muted-foreground mb-2">This Month</p>
+                <p className={`text-2xl font-bold mb-2 ${month.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {month.net >= 0 ? '+' : ''}{formatValue(month.net)}
+                </p>
+                <Separator className="my-2" />
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Income:</span>
+                    <span className="text-green-600 font-medium">{formatValue(month.income)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Expenses:</span>
+                    <span className="text-red-600 font-medium">{formatValue(month.expenses)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-2 hover:border-primary/50 transition-colors">
+              <CardContent className="p-4">
+                <p className="text-sm font-medium text-muted-foreground mb-2">This Quarter</p>
+                <p className={`text-2xl font-bold mb-2 ${quarter.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {quarter.net >= 0 ? '+' : ''}{formatValue(quarter.net)}
+                </p>
+                <Separator className="my-2" />
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Income:</span>
+                    <span className="text-green-600 font-medium">{formatValue(quarter.income)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Expenses:</span>
+                    <span className="text-red-600 font-medium">{formatValue(quarter.expenses)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-2 hover:border-primary/50 transition-colors">
+              <CardContent className="p-4">
+                <p className="text-sm font-medium text-muted-foreground mb-2">Year to Date</p>
+                <p className={`text-2xl font-bold mb-2 ${ytd.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {ytd.net >= 0 ? '+' : ''}{formatValue(ytd.net)}
+                </p>
+                <Separator className="my-2" />
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Income:</span>
+                    <span className="text-green-600 font-medium">{formatValue(ytd.income)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Expenses:</span>
+                    <span className="text-red-600 font-medium">{formatValue(ytd.expenses)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
         {/* Income Categories */}
         {incomeCategories.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold mb-4">Top 5 Income Categories (Year to Date)</h3>
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-green-600" />
+              Top 5 Income Categories (Year to Date)
+            </h3>
             <div className="space-y-2">
               {incomeCategories.map((cat: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-3 bg-green-50 rounded-lg">
-                  <span className="text-sm font-medium">{cat.name}</span>
-                  <span className="text-sm font-semibold text-green-600">{formatValue(cat.income)}</span>
+                <div key={idx} className="flex justify-between items-center p-3 bg-green-50/50 border border-green-200 rounded-lg hover:bg-green-50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                      #{idx + 1}
+                    </Badge>
+                    <span className="text-sm font-medium">{cat.name}</span>
+                  </div>
+                  <Badge variant="secondary" className="bg-green-600 text-white font-semibold">
+                    {formatValue(cat.income)}
+                  </Badge>
                 </div>
               ))}
             </div>
@@ -282,12 +374,22 @@ function StateStep({ data }: { data: any }) {
         {/* Expense Categories */}
         {expenseCategories.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold mb-4">Top 5 Expense Categories (Year to Date)</h3>
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <TrendingDown className="h-5 w-5 text-red-600" />
+              Top 5 Expense Categories (Year to Date)
+            </h3>
             <div className="space-y-2">
               {expenseCategories.map((cat: any, idx: number) => (
-                <div key={idx} className="flex justify-between items-center p-3 bg-red-50 rounded-lg">
-                  <span className="text-sm font-medium">{cat.name}</span>
-                  <span className="text-sm font-semibold text-red-600">{formatValue(cat.expense)}</span>
+                <div key={idx} className="flex justify-between items-center p-3 bg-red-50/50 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300">
+                      #{idx + 1}
+                    </Badge>
+                    <span className="text-sm font-medium">{cat.name}</span>
+                  </div>
+                  <Badge variant="secondary" className="bg-red-600 text-white font-semibold">
+                    {formatValue(cat.expense)}
+                  </Badge>
                 </div>
               ))}
             </div>
@@ -300,6 +402,33 @@ function StateStep({ data }: { data: any }) {
 
 function DeltaStep({ data, currency = 'GBP' }: { data: DeltaData; currency?: string }) {
   const formatValue = (value: number) => formatCurrency(value, currency, true)
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
+  const [loadingAnalysis, setLoadingAnalysis] = useState(true)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const loadAIAnalysis = async () => {
+      setLoadingAnalysis(true)
+      setAnalysisError(null)
+      try {
+        const res = await fetch('/api/framework/delta/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        const json = await res.json()
+        if (json?.ok) {
+          setAiAnalysis(json.data)
+        } else {
+          setAnalysisError(json?.error || 'Failed to load AI analysis')
+        }
+      } catch (e: any) {
+        setAnalysisError(e.message || 'Failed to load AI analysis')
+      } finally {
+        setLoadingAnalysis(false)
+      }
+    }
+    loadAIAnalysis()
+  }, [])
 
   // Support both new and legacy data formats
   const prevMonth = data.previousMonth || {
@@ -480,6 +609,104 @@ function DeltaStep({ data, currency = 'GBP' }: { data: DeltaData; currency?: str
             <p className="text-sm text-muted-foreground">No significant category changes detected.</p>
           </div>
         )}
+
+        {/* AI Analysis Section */}
+        <Separator />
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-primary" />
+              AI Analysis
+            </h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setLoadingAnalysis(true)
+                setAnalysisError(null)
+                try {
+                  const res = await fetch('/api/framework/delta/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh: true }),
+                  })
+                  const json = await res.json()
+                  if (json?.ok) {
+                    setAiAnalysis(json.data)
+                  } else {
+                    setAnalysisError(json?.error || 'Failed to refresh analysis')
+                  }
+                } catch (e: any) {
+                  setAnalysisError(e.message || 'Failed to refresh analysis')
+                } finally {
+                  setLoadingAnalysis(false)
+                }
+              }}
+              disabled={loadingAnalysis}
+            >
+              {loadingAnalysis ? 'Analyzing...' : 'Refresh Analysis'}
+            </Button>
+          </div>
+
+          {loadingAnalysis && !aiAnalysis && (
+            <div className="text-center py-8">
+              <LoadingSpinner size="lg" />
+              <p className="text-muted-foreground mt-4">AI is analyzing month-over-month changes...</p>
+            </div>
+          )}
+
+          {analysisError && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                {analysisError}
+                {aiAnalysis?.insights && aiAnalysis.insights.length > 0 && ' Showing rule-based insights instead.'}
+              </p>
+            </div>
+          )}
+
+          {aiAnalysis && (
+            <div className="space-y-4">
+              {aiAnalysis.summary && (
+                <div className="p-4 bg-muted/50 rounded-lg border">
+                  <p className="text-sm font-medium mb-1">Summary</p>
+                  <p className="text-sm text-muted-foreground">{aiAnalysis.summary}</p>
+                </div>
+              )}
+
+              {aiAnalysis.insights && aiAnalysis.insights.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Key Insights</p>
+                  <div className="space-y-2">
+                    {aiAnalysis.insights.map((insight: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg border ${
+                          insight.type === 'positive' ? 'bg-green-50 border-green-200' :
+                          insight.type === 'concern' ? 'bg-red-50 border-red-200' :
+                          'bg-blue-50 border-blue-200'
+                        }`}
+                      >
+                        <p className={`text-sm font-semibold mb-1 ${
+                          insight.type === 'positive' ? 'text-green-800' :
+                          insight.type === 'concern' ? 'text-red-800' :
+                          'text-blue-800'
+                        }`}>
+                          {insight.title}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{insight.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+
+              {aiAnalysis.message && (
+                <p className="text-xs text-muted-foreground mt-2">{aiAnalysis.message}</p>
+              )}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   )
@@ -512,6 +739,9 @@ function TrajectoryStep({ data, currency = 'GBP' }: { data: TrajectoryData; curr
   const [rollingForecastData, setRollingForecastData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [horizon, setHorizon] = useState<'6months' | 'yearend'>('6months')
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null)
+  const [loadingAnalysis, setLoadingAnalysis] = useState(true)
+  const [analysisError, setAnalysisError] = useState<string | null>(null)
 
   const formatValue = useMemo(() => (value: number) => formatCurrency(value, currency, true), [currency])
 
@@ -538,6 +768,30 @@ function TrajectoryStep({ data, currency = 'GBP' }: { data: TrajectoryData; curr
     }
     loadRollingForecast()
   }, [horizon])
+
+  useEffect(() => {
+    const loadAIAnalysis = async () => {
+      setLoadingAnalysis(true)
+      setAnalysisError(null)
+      try {
+        const res = await fetch('/api/framework/trajectory/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
+        const json = await res.json()
+        if (json?.ok) {
+          setAiAnalysis(json.data)
+        } else {
+          setAnalysisError(json?.error || 'Failed to load AI analysis')
+        }
+      } catch (e: any) {
+        setAnalysisError(e.message || 'Failed to load AI analysis')
+      } finally {
+        setLoadingAnalysis(false)
+      }
+    }
+    loadAIAnalysis()
+  }, [])
 
   const forecastData = rollingForecastData || data
 
@@ -916,6 +1170,117 @@ function TrajectoryStep({ data, currency = 'GBP' }: { data: TrajectoryData; curr
             </div>
           </div>
         )}
+
+        {/* AI Analysis Section */}
+        <Separator />
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-primary" />
+              AI Analysis
+            </h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                setLoadingAnalysis(true)
+                setAnalysisError(null)
+                try {
+                  const res = await fetch('/api/framework/trajectory/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh: true }),
+                  })
+                  const json = await res.json()
+                  if (json?.ok) {
+                    setAiAnalysis(json.data)
+                  } else {
+                    setAnalysisError(json?.error || 'Failed to refresh analysis')
+                  }
+                } catch (e: any) {
+                  setAnalysisError(e.message || 'Failed to refresh analysis')
+                } finally {
+                  setLoadingAnalysis(false)
+                }
+              }}
+              disabled={loadingAnalysis}
+            >
+              {loadingAnalysis ? 'Analyzing...' : 'Refresh Analysis'}
+            </Button>
+          </div>
+
+          {loadingAnalysis && !aiAnalysis && (
+            <div className="text-center py-8">
+              <LoadingSpinner size="lg" />
+              <p className="text-muted-foreground mt-4">AI is analyzing your cash trajectory...</p>
+            </div>
+          )}
+
+          {analysisError && (
+            <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-sm text-yellow-800">
+                {analysisError}
+                {aiAnalysis?.insights && aiAnalysis.insights.length > 0 && ' Showing rule-based insights instead.'}
+              </p>
+            </div>
+          )}
+
+          {aiAnalysis && (
+            <div className="space-y-4">
+              {aiAnalysis.summary && (
+                <div className="p-4 bg-muted/50 rounded-lg border">
+                  <p className="text-sm font-medium mb-1">Summary</p>
+                  <p className="text-sm text-muted-foreground">{aiAnalysis.summary}</p>
+                </div>
+              )}
+
+              {aiAnalysis.insights && aiAnalysis.insights.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Key Insights</p>
+                  <div className="space-y-2">
+                    {aiAnalysis.insights.map((insight: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg border ${
+                          insight.type === 'positive' ? 'bg-green-50 border-green-200' :
+                          insight.type === 'concern' ? 'bg-red-50 border-red-200' :
+                          'bg-blue-50 border-blue-200'
+                        }`}
+                      >
+                        <p className={`text-sm font-semibold mb-1 ${
+                          insight.type === 'positive' ? 'text-green-800' :
+                          insight.type === 'concern' ? 'text-red-800' :
+                          'text-blue-800'
+                        }`}>
+                          {insight.title}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{insight.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {aiAnalysis.milestones && aiAnalysis.milestones.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium mb-2">Key Milestones</p>
+                  <div className="space-y-2">
+                    {aiAnalysis.milestones.map((milestone: any, idx: number) => (
+                      <div key={idx} className="p-3 bg-muted/50 rounded-lg border">
+                        <p className="text-sm font-semibold mb-1">{milestone.title} - {formatMonth(milestone.month)}</p>
+                        <p className="text-sm text-muted-foreground">{milestone.description}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {aiAnalysis.message && (
+                <p className="text-xs text-muted-foreground mt-2">{aiAnalysis.message}</p>
+              )}
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   )
@@ -1042,6 +1407,7 @@ function ExposureStep({ data, currency = 'GBP' }: { data: ExposureData; currency
                     const res = await fetch('/api/framework/exposure/analyze', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ refresh: true }),
                     })
                     const json = await res.json()
                     if (json?.ok) {
@@ -1292,6 +1658,7 @@ function ChoiceStep({ data, currency = 'GBP' }: { data: ChoiceData; currency?: s
                 const res = await fetch('/api/framework/choice/analyze', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ refresh: true }),
                 })
                 const json = await res.json()
                 if (json?.ok) {
