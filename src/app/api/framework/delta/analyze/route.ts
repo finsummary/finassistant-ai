@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, successResponse } from '../../../_utils'
 import { getCachedAnalysis, setCachedAnalysis } from '@/lib/ai-cache'
+import { searchFinancialKnowledge, searchUserKnowledge, saveUserKnowledge } from '@/lib/knowledge-search'
 
 export const dynamic = 'force-dynamic'
 
@@ -288,9 +289,39 @@ export async function POST(req: Request) {
       topExpenseDecreases,
     }
 
+    // Search for relevant knowledge from vector database
+    let financialKnowledge: string[] = []
+    let userKnowledge: string[] = []
+    
+    try {
+      // Build query for financial knowledge search
+      const knowledgeQuery = `Revenue variance: ${revenueVariance}, cost variance: ${costVariance}, burn variance: ${burnVariance}. ` +
+        `Runway changed from ${previousRunway !== null ? previousRunway : 'unknown'} to ${currentRunway !== null ? currentRunway : 'unknown'} months. ` +
+        `Misalignments: ${misalignments.length} identified. ` +
+        `What changed in the business finances?`
+      
+      const financialResults = await searchFinancialKnowledge(knowledgeQuery, undefined, 5, 0.7)
+      financialKnowledge = financialResults.map(k => k.content)
+      
+      // Search for user-specific knowledge
+      const userQuery = `User's financial changes: revenue variance ${revenueVariance}, cost variance ${costVariance}, runway variance ${runwayVariance !== null ? runwayVariance : 'unknown'}.`
+      
+      const userResults = await searchUserKnowledge(userId, userQuery, undefined, 3, 0.7)
+      userKnowledge = userResults.map(k => k.content)
+    } catch (error: any) {
+      // Log but don't fail - knowledge search is optional
+      console.warn('[Delta Analyze] Knowledge search failed:', error.message)
+    }
+
     const systemPrompt = `You are a financial advisor analyzing changes (DELTA) in a business's finances.
 
-FOCUS: Answer ONLY "What changed?" - explain movement since the last review, nothing else.
+${financialKnowledge.length > 0 ? `RELEVANT FINANCIAL KNOWLEDGE:
+${financialKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}${userKnowledge.length > 0 ? `USER-SPECIFIC CONTEXT:
+${userKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}FOCUS: Answer ONLY "What changed?" - explain movement since the last review, nothing else.
 
 DELTA Purpose: Explain movement since the last review. Delta answers: "Why does this feel different than last month?"
 
@@ -378,6 +409,28 @@ Analyze these variances and provide insights.`
     
     // Cache the result (both AI and rule-based)
     setCachedAnalysis(userId, 'delta', result)
+    
+    // Save user knowledge from this analysis (async, don't wait)
+    if (analysis && analysis.summary) {
+      saveUserKnowledge(
+        userId,
+        `In DELTA analysis: Revenue variance ${context.variances.revenue}, cost variance ${context.variances.cost}, burn variance ${context.variances.burn}. ` +
+        `Runway changed from ${context.previousRunway !== null ? context.previousRunway : 'unknown'} to ${context.currentRunway !== null ? context.currentRunway : 'unknown'} months. ` +
+        `Misalignments: ${context.misalignments.length} identified. ` +
+        `AI summary: ${analysis.summary}.`,
+        'business_context',
+        {
+          framework_section: 'delta',
+          timestamp: new Date().toISOString(),
+          variances: context.variances,
+          current_runway: context.currentRunway,
+          previous_runway: context.previousRunway,
+          misalignments: context.misalignments,
+        }
+      ).catch((err) => {
+        console.warn('[Delta Analyze] Failed to save user knowledge:', err.message)
+      })
+    }
     
     return successResponse({
       ...result,

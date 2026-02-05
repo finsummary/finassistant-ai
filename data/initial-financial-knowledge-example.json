@@ -1,0 +1,92 @@
+[
+  {
+    "content": "For businesses with runway less than 3 months, immediate action is critical. Focus on: 1) Extending payment terms with suppliers, 2) Accelerating receivables collection, 3) Reducing non-essential fixed costs, 4) Exploring short-term financing options. Every week counts when runway is short.",
+    "category": "cash_flow",
+    "tags": ["runway", "emergency", "cash_crisis", "short_runway"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If monthly expenses are growing faster than revenue (expense growth > revenue growth), this indicates uncontrolled growth. Freeze hiring, review all recurring subscriptions, and implement spending approval processes before the situation becomes critical.",
+    "category": "expenses",
+    "tags": ["growth", "cost_control", "burn_rate", "expense_growth"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When a single client or revenue stream represents more than 30% of total income, this creates dependency risk. Diversify revenue sources, negotiate longer-term contracts, and build a reserve fund to weather potential client loss.",
+    "category": "risk",
+    "tags": ["dependency", "revenue_concentration", "client_risk"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Fixed costs that don't contribute to revenue growth should be the first target for reduction during cash flow crises. Examples: unused software subscriptions, underutilized office space, non-essential services. Variable costs can be scaled with revenue.",
+    "category": "expenses",
+    "tags": ["fixed_costs", "cost_reduction", "cash_flow"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "A healthy cash runway is typically 6-12 months for established businesses and 12-18 months for startups. When runway drops below 6 months, begin planning for fundraising or cost reduction. Below 3 months requires immediate action.",
+    "category": "runway",
+    "tags": ["runway", "planning", "fundraising", "benchmarks"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget variances of more than 20% (actual vs planned) indicate either unrealistic budgeting or significant business changes. Review and adjust budget assumptions monthly. Large positive variances in expenses require immediate investigation.",
+    "category": "budgeting",
+    "tags": ["variance", "budget_analysis", "planning"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with recurring revenue (SaaS, subscriptions), focus on MRR growth rate and churn. If churn exceeds 5% monthly, runway calculations become unreliable. Prioritize retention over new customer acquisition when cash is tight.",
+    "category": "revenue",
+    "tags": ["recurring_revenue", "mrr", "churn", "saas"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When negotiating with suppliers during cash flow constraints, offer early payment discounts in exchange for extended payment terms. This improves short-term cash position while maintaining supplier relationships.",
+    "category": "cash_flow",
+    "tags": ["negotiation", "suppliers", "payment_terms"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Seasonal businesses must build cash reserves during peak seasons to cover expenses during off-seasons. A general rule: maintain 3-6 months of average monthly expenses as reserve before peak season ends.",
+    "category": "cash_flow",
+    "tags": ["seasonality", "reserves", "planning"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If expenses consistently exceed income for 3+ months without a clear path to profitability, this is a structural problem requiring fundamental changes: pricing, cost structure, or business model. Temporary fixes won't solve it.",
+    "category": "expenses",
+    "tags": ["structural_problem", "profitability", "business_model"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Large one-time expenses (equipment, renovations) should be planned 3-6 months in advance and included in budget forecasts. If unplanned large expenses occur, immediately adjust budget and runway projections.",
+    "category": "budgeting",
+    "tags": ["large_expenses", "planning", "forecasting"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is critical (< 3 months), prioritize decisions that: 1) Have immediate cash impact, 2) Are reversible if wrong, 3) Don't lock you into long-term commitments, 4) Create optionality for future decisions.",
+    "category": "cash_flow",
+    "tags": ["decision_making", "runway", "reversibility", "optionality"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Revenue concentration in a single month (e.g., 40%+ of annual revenue in one month) creates timing risk. Negotiate payment schedules, offer early payment discounts, or secure financing to smooth cash flow throughout the year.",
+    "category": "risk",
+    "tags": ["timing_risk", "revenue_concentration", "cash_flow"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For solopreneurs and small businesses, maintain separate business and personal accounts. Mixing finances makes it impossible to accurately track business performance, runway, and make informed decisions.",
+    "category": "cash_flow",
+    "tags": ["accounting", "separation", "tracking"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When actual expenses consistently exceed budget by 10%+ for multiple categories, the budget assumptions are likely wrong. Revisit expense categories, check for missing recurring costs, and update growth rate assumptions based on actual trends.",
+    "category": "budgeting",
+    "tags": ["variance", "budget_assumptions", "trends"],
+    "source": "Financial best practices"
+  }
+]

@@ -1,0 +1,1004 @@
+[
+  {
+    "content": "For businesses with runway less than 3 months, immediate action is critical. Focus on: 1) Extending payment terms with suppliers, 2) Accelerating receivables collection, 3) Reducing non-essential fixed costs, 4) Exploring short-term financing options. Every week counts when runway is short.",
+    "category": "cash_flow",
+    "tags": ["runway", "emergency", "cash_crisis", "short_runway"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If monthly expenses are growing faster than revenue (expense growth > revenue growth), this indicates uncontrolled growth. Freeze hiring, review all recurring subscriptions, and implement spending approval processes before the situation becomes critical.",
+    "category": "expenses",
+    "tags": ["growth", "cost_control", "burn_rate", "expense_growth"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When a single client or revenue stream represents more than 30% of total income, this creates dependency risk. Diversify revenue sources, negotiate longer-term contracts, and build a reserve fund to weather potential client loss.",
+    "category": "risk",
+    "tags": ["dependency", "revenue_concentration", "client_risk"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Fixed costs that don't contribute to revenue growth should be the first target for reduction during cash flow crises. Examples: unused software subscriptions, underutilized office space, non-essential services. Variable costs can be scaled with revenue.",
+    "category": "expenses",
+    "tags": ["fixed_costs", "cost_reduction", "cash_flow"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "A healthy cash runway is typically 6-12 months for established businesses and 12-18 months for startups. When runway drops below 6 months, begin planning for fundraising or cost reduction. Below 3 months requires immediate action.",
+    "category": "runway",
+    "tags": ["runway", "planning", "fundraising", "benchmarks"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget variances of more than 20% (actual vs planned) indicate either unrealistic budgeting or significant business changes. Review and adjust budget assumptions monthly. Large positive variances in expenses require immediate investigation.",
+    "category": "budgeting",
+    "tags": ["variance", "budget_analysis", "planning"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with recurring revenue (SaaS, subscriptions), focus on MRR growth rate and churn. If churn exceeds 5% monthly, runway calculations become unreliable. Prioritize retention over new customer acquisition when cash is tight.",
+    "category": "revenue",
+    "tags": ["recurring_revenue", "mrr", "churn", "saas"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When negotiating with suppliers during cash flow constraints, offer early payment discounts in exchange for extended payment terms. This improves short-term cash position while maintaining supplier relationships.",
+    "category": "cash_flow",
+    "tags": ["negotiation", "suppliers", "payment_terms"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Seasonal businesses must build cash reserves during peak seasons to cover expenses during off-seasons. A general rule: maintain 3-6 months of average monthly expenses as reserve before peak season ends.",
+    "category": "cash_flow",
+    "tags": ["seasonality", "reserves", "planning"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If expenses consistently exceed income for 3+ months without a clear path to profitability, this is a structural problem requiring fundamental changes: pricing, cost structure, or business model. Temporary fixes won't solve it.",
+    "category": "expenses",
+    "tags": ["structural_problem", "profitability", "business_model"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Large one-time expenses (equipment, renovations) should be planned 3-6 months in advance and included in budget forecasts. If unplanned large expenses occur, immediately adjust budget and runway projections.",
+    "category": "budgeting",
+    "tags": ["large_expenses", "planning", "forecasting"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is critical (< 3 months), prioritize decisions that: 1) Have immediate cash impact, 2) Are reversible if wrong, 3) Don't lock you into long-term commitments, 4) Create optionality for future decisions.",
+    "category": "cash_flow",
+    "tags": ["decision_making", "runway", "reversibility", "optionality"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Revenue concentration in a single month (e.g., 40%+ of annual revenue in one month) creates timing risk. Negotiate payment schedules, offer early payment discounts, or secure financing to smooth cash flow throughout the year.",
+    "category": "risk",
+    "tags": ["timing_risk", "revenue_concentration", "cash_flow"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For solopreneurs and small businesses, maintain separate business and personal accounts. Mixing finances makes it impossible to accurately track business performance, runway, and make informed decisions.",
+    "category": "cash_flow",
+    "tags": ["accounting", "separation", "tracking"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When actual expenses consistently exceed budget by 10%+ for multiple categories, the budget assumptions are likely wrong. Revisit expense categories, check for missing recurring costs, and update growth rate assumptions based on actual trends.",
+    "category": "budgeting",
+    "tags": ["variance", "budget_assumptions", "trends"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Negative cash flow for 2+ consecutive months requires immediate attention. Identify the root cause: declining revenue, increasing costs, or timing issues. Implement corrective measures before it becomes a crisis.",
+    "category": "cash_flow",
+    "tags": ["negative_cash_flow", "crisis_prevention", "monitoring"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When burn rate exceeds 20% of cash balance monthly, runway calculations become unreliable. Either reduce burn rate immediately or secure additional funding within 30 days.",
+    "category": "runway",
+    "tags": ["burn_rate", "runway_calculation", "funding"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Accounts receivable aging over 60 days indicates collection problems. Implement stricter payment terms, offer early payment discounts, and consider factoring for immediate cash needs.",
+    "category": "cash_flow",
+    "tags": ["accounts_receivable", "collection", "payment_terms"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If operating expenses grow faster than revenue for 3+ consecutive months, this signals unsustainable growth. Freeze all non-essential hiring and spending until revenue catches up.",
+    "category": "expenses",
+    "tags": ["unsustainable_growth", "hiring_freeze", "cost_control"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance drops below 1 month of average monthly expenses, immediate action is required. This is a critical threshold that requires emergency measures: payment deferrals, emergency financing, or drastic cost cuts.",
+    "category": "cash_flow",
+    "tags": ["critical_threshold", "emergency_measures", "cash_balance"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget accuracy improves when you track actuals vs budget weekly, not monthly. Weekly reviews catch problems early and allow for faster course correction.",
+    "category": "budgeting",
+    "tags": ["budget_tracking", "weekly_reviews", "accuracy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For service businesses, invoice within 24 hours of service completion. Delayed invoicing directly impacts cash flow and runway. Automate invoicing where possible.",
+    "category": "cash_flow",
+    "tags": ["invoicing", "service_business", "automation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When a single expense category represents more than 40% of total expenses, this creates concentration risk. Diversify cost structure to reduce dependency on any single cost center.",
+    "category": "expenses",
+    "tags": ["expense_concentration", "diversification", "risk"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Runway calculations should use worst-case scenario (highest monthly burn) not average. This provides a safety buffer and prevents overconfidence in cash position.",
+    "category": "runway",
+    "tags": ["runway_calculation", "worst_case", "safety_buffer"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue growth rate is negative for 2+ consecutive months, this indicates a fundamental business problem. Don't wait for it to self-correct - take immediate action to reverse the trend.",
+    "category": "revenue",
+    "tags": ["revenue_decline", "business_problem", "trend_reversal"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When negotiating payment terms, aim for net-60 or net-90 for payables while maintaining net-30 or better for receivables. This creates a positive cash flow timing advantage.",
+    "category": "cash_flow",
+    "tags": ["payment_terms", "cash_flow_timing", "negotiation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Monthly recurring expenses (subscriptions, software) should be reviewed quarterly. Cancel unused services immediately - they silently drain cash without providing value.",
+    "category": "expenses",
+    "tags": ["recurring_expenses", "subscriptions", "cost_review"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If gross margin drops below 20% for service businesses or 30% for product businesses, profitability becomes difficult. Review pricing strategy and cost structure immediately.",
+    "category": "revenue",
+    "tags": ["gross_margin", "profitability", "pricing_strategy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is positive but runway is less than 6 months, prioritize revenue growth over cost reduction. Revenue growth extends runway faster than cost cuts.",
+    "category": "runway",
+    "tags": ["revenue_growth", "runway_extension", "prioritization"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget forecasts should include a 'buffer' category (10-15% of total expenses) for unexpected costs. This prevents budget overruns and maintains forecast accuracy.",
+    "category": "budgeting",
+    "tags": ["budget_buffer", "forecast_accuracy", "unexpected_costs"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer acquisition cost (CAC) exceeds customer lifetime value (LTV) by more than 20%, the business model is unsustainable. Either reduce CAC or increase LTV through pricing or retention.",
+    "category": "revenue",
+    "tags": ["cac", "ltv", "business_model", "sustainability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show high volatility month-to-month (variance > 30%), this indicates poor cost control. Implement spending approval processes and budget controls.",
+    "category": "expenses",
+    "tags": ["expense_volatility", "cost_control", "spending_approval"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with long sales cycles (60+ days), maintain 12+ months runway. Long sales cycles create cash flow gaps that require larger reserves.",
+    "category": "runway",
+    "tags": ["sales_cycle", "runway_requirements", "cash_flow_gaps"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If net profit margin is negative for 6+ consecutive months without a clear path to profitability, consider pivoting the business model or seeking external funding.",
+    "category": "revenue",
+    "tags": ["profitability", "business_pivot", "funding"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is positive but runway is declining, this indicates increasing expenses or decreasing revenue. Identify the trend early and take corrective action before it becomes critical.",
+    "category": "cash_flow",
+    "tags": ["runway_decline", "trend_identification", "early_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be updated monthly based on actual performance. Static budgets become inaccurate quickly and lead to poor decision-making.",
+    "category": "budgeting",
+    "tags": ["budget_updates", "monthly_review", "accuracy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If operating leverage is high (fixed costs > 60% of total costs), small revenue declines create large profit impacts. Build larger cash reserves to weather revenue volatility.",
+    "category": "expenses",
+    "tags": ["operating_leverage", "fixed_costs", "cash_reserves"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is between 3-6 months, begin fundraising process immediately. Fundraising typically takes 3-6 months, so starting early prevents crisis.",
+    "category": "runway",
+    "tags": ["fundraising", "timing", "runway_planning"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For product businesses, inventory turnover ratio below 4x annually indicates overstocking. Excess inventory ties up cash unnecessarily and reduces runway.",
+    "category": "cash_flow",
+    "tags": ["inventory", "cash_flow", "turnover"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer retention rate drops below 80% for subscription businesses, revenue growth becomes difficult. Focus on retention before acquisition.",
+    "category": "revenue",
+    "tags": ["customer_retention", "subscription", "revenue_growth"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expense growth rate exceeds revenue growth rate by 2x for 2+ months, this is a red flag. Implement immediate cost controls and spending freezes.",
+    "category": "expenses",
+    "tags": ["expense_growth", "red_flag", "cost_controls"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include separate categories for 'essential' and 'discretionary' expenses. During cash crunches, discretionary expenses can be cut immediately without impacting operations.",
+    "category": "budgeting",
+    "tags": ["expense_categorization", "essential_vs_discretionary", "cash_crunch"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If average days to payment exceeds 45 days, implement stricter payment terms or offer early payment discounts. Slow payments directly reduce runway.",
+    "category": "cash_flow",
+    "tags": ["payment_terms", "days_to_payment", "runway"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is negative, prioritize actions that generate immediate cash inflow: invoice collection, payment acceleration, or short-term financing.",
+    "category": "cash_flow",
+    "tags": ["negative_balance", "cash_inflow", "prioritization"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high seasonality (revenue varies >50% between peak and off-peak), maintain 9+ months runway. Seasonal businesses need larger reserves.",
+    "category": "runway",
+    "tags": ["seasonality", "runway_requirements", "reserves"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If contribution margin (revenue - variable costs) is negative, the business cannot scale profitably. Fix unit economics before attempting to grow.",
+    "category": "revenue",
+    "tags": ["contribution_margin", "unit_economics", "scalability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses are consistently under budget by >20%, the budget may be too conservative. Update budget assumptions to reflect actual spending patterns.",
+    "category": "budgeting",
+    "tags": ["budget_accuracy", "conservative_budgeting", "assumptions"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer concentration (>50% from top 3 clients), maintain 12+ months runway. Customer concentration creates high risk of sudden revenue loss.",
+    "category": "risk",
+    "tags": ["customer_concentration", "runway_requirements", "revenue_risk"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If operating cash flow is negative for 3+ consecutive months, this indicates a fundamental cash flow problem. Review pricing, costs, and payment terms immediately.",
+    "category": "cash_flow",
+    "tags": ["operating_cash_flow", "cash_flow_problem", "review"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway drops below 2 months, consider all options: emergency financing, drastic cost cuts, or business sale. Waiting until cash runs out eliminates options.",
+    "category": "runway",
+    "tags": ["critical_runway", "emergency_options", "decision_making"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should track both 'committed' expenses (contracts, leases) and 'discretionary' expenses. Committed expenses are harder to reduce quickly.",
+    "category": "budgeting",
+    "tags": ["committed_expenses", "discretionary_expenses", "flexibility"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue per employee is declining, either revenue is falling or headcount is growing too fast. Both scenarios require immediate attention.",
+    "category": "revenue",
+    "tags": ["revenue_per_employee", "headcount", "efficiency"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow forecast shows negative balance within 90 days, take immediate action. 90 days is the minimum time needed to implement most corrective measures.",
+    "category": "cash_flow",
+    "tags": ["cash_flow_forecast", "negative_balance", "action_timing"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high fixed costs (>70% of total), revenue volatility creates high profit volatility. Build larger cash reserves to buffer revenue swings.",
+    "category": "expenses",
+    "tags": ["fixed_costs", "profit_volatility", "cash_reserves"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If runway is extending (increasing), this indicates positive cash flow trends. Use this time to invest in growth initiatives or build larger reserves.",
+    "category": "runway",
+    "tags": ["runway_extension", "positive_trends", "growth_investment"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget accuracy is critical for runway calculations. Inaccurate budgets lead to incorrect runway estimates and poor decision-making.",
+    "category": "budgeting",
+    "tags": ["budget_accuracy", "runway_calculation", "decision_making"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses grow faster than revenue for 4+ consecutive months, this is unsustainable. Take immediate action to reverse the trend or secure additional funding.",
+    "category": "expenses",
+    "tags": ["unsustainable_trend", "expense_growth", "funding"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with low margins (<10%), small cost increases or revenue declines create large profit impacts. Maintain tight cost control and pricing discipline.",
+    "category": "revenue",
+    "tags": ["low_margins", "cost_control", "pricing"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If cash balance is positive but declining month-over-month, identify the trend early. Declining cash balance with positive flow indicates increasing expenses or decreasing revenue.",
+    "category": "cash_flow",
+    "tags": ["cash_decline", "trend_identification", "early_warning"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is between 6-12 months, this is the optimal time for strategic planning: fundraising, cost optimization, or growth initiatives. Don't wait until runway is critical.",
+    "category": "runway",
+    "tags": ["strategic_planning", "optimal_timing", "runway_management"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include scenario planning: best case, base case, and worst case. This helps prepare for different outcomes and reduces surprises.",
+    "category": "budgeting",
+    "tags": ["scenario_planning", "budget_preparation", "risk_management"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer lifetime value (LTV) to customer acquisition cost (CAC) ratio is below 3:1, the business model may be unsustainable. Improve LTV or reduce CAC.",
+    "category": "revenue",
+    "tags": ["ltv_cac_ratio", "business_model", "sustainability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show sudden spikes (>50% increase month-over-month), investigate immediately. Sudden expense increases often indicate errors, fraud, or unplanned costs.",
+    "category": "expenses",
+    "tags": ["expense_spikes", "investigation", "fraud_detection"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with recurring revenue, focus on net revenue retention (NRR). NRR above 100% indicates healthy growth without new customer acquisition.",
+    "category": "revenue",
+    "tags": ["net_revenue_retention", "nrr", "recurring_revenue"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is volatile (month-to-month variance >40%), maintain larger cash reserves. Volatile cash flow requires larger buffers to prevent cash crunches.",
+    "category": "cash_flow",
+    "tags": ["cash_flow_volatility", "reserves", "buffers"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be reviewed and updated after major business events: new hires, contract signings, product launches, or market changes. Static budgets become outdated quickly.",
+    "category": "budgeting",
+    "tags": ["budget_review", "business_events", "budget_updates"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If runway calculation shows 'infinite' (positive cash flow with no burn), this is misleading. Account for future growth expenses and planned investments in runway calculations.",
+    "category": "runway",
+    "tags": ["runway_calculation", "growth_expenses", "investments"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses are consistently over budget across multiple categories, this indicates systemic budgeting issues. Review budget methodology and assumptions, not just individual categories.",
+    "category": "budgeting",
+    "tags": ["systemic_budgeting_issues", "budget_methodology", "assumptions"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer churn (>10% monthly), runway calculations become unreliable. Focus on reducing churn before attempting to grow revenue.",
+    "category": "revenue",
+    "tags": ["customer_churn", "runway_reliability", "retention"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is high (>12 months runway) but expenses are growing faster than revenue, this is a warning sign. High cash balance can mask underlying problems.",
+    "category": "cash_flow",
+    "tags": ["high_cash_balance", "warning_signs", "underlying_problems"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include a 'contingency' line item (5-10% of total) for truly unexpected expenses. This prevents budget overruns and maintains forecast accuracy.",
+    "category": "budgeting",
+    "tags": ["contingency", "unexpected_expenses", "forecast_accuracy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If operating margin is negative for 6+ months, the business cannot sustain itself without external funding. Either fix unit economics or secure additional capital.",
+    "category": "revenue",
+    "tags": ["operating_margin", "sustainability", "external_funding"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show declining trend but revenue is flat, this may indicate underinvestment. Balance cost reduction with growth investment to avoid stagnation.",
+    "category": "expenses",
+    "tags": ["underinvestment", "cost_reduction", "growth_balance"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with long payment cycles (90+ days), maintain 12+ months runway. Long payment cycles create cash flow gaps that require larger reserves.",
+    "category": "cash_flow",
+    "tags": ["payment_cycles", "runway_requirements", "cash_flow_gaps"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget accuracy improves when you involve department heads in budget creation. They have better visibility into actual costs and can provide more accurate estimates.",
+    "category": "budgeting",
+    "tags": ["budget_creation", "department_involvement", "accuracy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue growth rate slows below 10% annually for established businesses, this may indicate market saturation or competitive pressure. Review market position and pricing strategy.",
+    "category": "revenue",
+    "tags": ["revenue_growth_slowdown", "market_saturation", "competitive_pressure"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow forecast extends beyond 12 months, accuracy decreases significantly. Focus on near-term forecasts (3-6 months) for decision-making and use longer forecasts for strategic planning only.",
+    "category": "cash_flow",
+    "tags": ["forecast_accuracy", "forecast_horizon", "decision_making"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be compared to actuals weekly, not monthly. Weekly comparisons catch problems early and allow for faster course correction.",
+    "category": "budgeting",
+    "tags": ["weekly_comparisons", "early_detection", "course_correction"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If expense growth rate exceeds revenue growth rate consistently, this creates a 'death spiral'. Take immediate action to reverse the trend before it becomes irreversible.",
+    "category": "expenses",
+    "tags": ["death_spiral", "trend_reversal", "immediate_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high fixed costs, small revenue declines create large profit declines. Build larger cash reserves and consider converting fixed costs to variable where possible.",
+    "category": "expenses",
+    "tags": ["fixed_costs", "profit_declines", "cost_conversion"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is critical (< 3 months), every decision should be evaluated by its immediate cash impact. Long-term strategic decisions should wait until cash position improves.",
+    "category": "runway",
+    "tags": ["critical_runway", "decision_evaluation", "cash_impact"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include separate tracking for 'one-time' vs 'recurring' expenses. One-time expenses don't impact future months, while recurring expenses compound over time.",
+    "category": "budgeting",
+    "tags": ["one_time_expenses", "recurring_expenses", "expense_tracking"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If gross margin is declining month-over-month, this indicates pricing pressure or cost inflation. Review pricing strategy and supplier contracts immediately.",
+    "category": "revenue",
+    "tags": ["gross_margin_decline", "pricing_pressure", "cost_inflation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is positive but cash flow is negative, this indicates temporary cash position. Negative cash flow will eventually deplete positive balance - take action before it's too late.",
+    "category": "cash_flow",
+    "tags": ["temporary_cash_position", "negative_cash_flow", "early_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget forecasts should account for seasonality if applicable. Seasonal businesses need different budgets for peak and off-peak seasons.",
+    "category": "budgeting",
+    "tags": ["seasonality", "budget_forecasts", "seasonal_businesses"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer acquisition cost (CAC) payback period exceeds 12 months, the business model may be unsustainable. Either reduce CAC or increase customer lifetime value.",
+    "category": "revenue",
+    "tags": ["cac_payback", "business_model", "sustainability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show high correlation with revenue (variable costs), this is healthy. High fixed costs create risk during revenue declines.",
+    "category": "expenses",
+    "tags": ["variable_costs", "fixed_costs", "risk_management"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer concentration risk, maintain 18+ months runway. Customer concentration creates high risk of sudden revenue loss that requires time to replace.",
+    "category": "risk",
+    "tags": ["customer_concentration", "runway_requirements", "revenue_risk"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be 'zero-based' (justify every expense) at least annually. Zero-based budgeting eliminates legacy expenses that no longer provide value.",
+    "category": "budgeting",
+    "tags": ["zero_based_budgeting", "expense_justification", "legacy_expenses"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue per customer is declining, this may indicate pricing pressure or customer downgrades. Review pricing strategy and customer segmentation.",
+    "category": "revenue",
+    "tags": ["revenue_per_customer", "pricing_pressure", "customer_segmentation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is positive but runway is shortening, this indicates increasing expenses or decreasing revenue. Identify the trend early and take corrective action.",
+    "category": "cash_flow",
+    "tags": ["runway_shortening", "trend_identification", "corrective_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'what-if' scenarios: what if revenue drops 20%? What if expenses increase 15%? Scenario planning helps prepare for different outcomes.",
+    "category": "budgeting",
+    "tags": ["what_if_scenarios", "scenario_planning", "preparation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If operating cash flow margin (operating cash flow / revenue) is negative, the business cannot sustain itself without external funding. Fix unit economics or secure capital.",
+    "category": "cash_flow",
+    "tags": ["operating_cash_flow_margin", "sustainability", "external_funding"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses are consistently under budget, this may indicate conservative budgeting or missed opportunities. Review budget assumptions and consider reallocating funds to growth initiatives.",
+    "category": "budgeting",
+    "tags": ["conservative_budgeting", "missed_opportunities", "fund_reallocation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high inventory turnover (>12x annually), maintain smaller cash reserves. High inventory turnover indicates efficient cash management.",
+    "category": "cash_flow",
+    "tags": ["inventory_turnover", "cash_reserves", "efficiency"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer retention rate is below 70% for subscription businesses, revenue growth becomes difficult. Focus on retention before attempting to grow through acquisition.",
+    "category": "revenue",
+    "tags": ["customer_retention", "subscription", "revenue_growth"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is high but expenses are growing, this creates a false sense of security. High cash balance can mask underlying problems that will surface when cash depletes.",
+    "category": "cash_flow",
+    "tags": ["false_security", "high_cash_balance", "underlying_problems"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be reviewed by someone independent of budget creation. Independent review catches errors and biases that creators may miss.",
+    "category": "budgeting",
+    "tags": ["independent_review", "budget_accuracy", "bias_detection"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue concentration in top 3 customers exceeds 60%, this creates extreme dependency risk. Diversify customer base immediately to reduce risk.",
+    "category": "risk",
+    "tags": ["revenue_concentration", "dependency_risk", "diversification"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow forecast shows break-even point beyond 12 months, this may indicate unrealistic assumptions. Review forecast assumptions and consider more conservative scenarios.",
+    "category": "cash_flow",
+    "tags": ["break_even", "forecast_assumptions", "conservative_scenarios"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'capital expenditures' as separate line item. CapEx impacts cash flow but not operating expenses, so it needs separate tracking.",
+    "category": "budgeting",
+    "tags": ["capital_expenditures", "capex", "cash_flow_tracking"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If average transaction value is declining, this may indicate pricing pressure or customer downgrades. Review pricing strategy and product mix.",
+    "category": "revenue",
+    "tags": ["average_transaction_value", "pricing_pressure", "product_mix"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show sudden drops (>30% decrease month-over-month), investigate immediately. Sudden expense drops may indicate errors, missed payments, or temporary cost reductions that will reverse.",
+    "category": "expenses",
+    "tags": ["expense_drops", "investigation", "temporary_reductions"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer lifetime value (LTV > $10k), focus on retention over acquisition. High LTV customers are more valuable to retain than acquire new ones.",
+    "category": "revenue",
+    "tags": ["customer_lifetime_value", "retention", "acquisition"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is between 12-18 months, this is the optimal time for strategic initiatives: product development, market expansion, or team building. Use this time wisely.",
+    "category": "runway",
+    "tags": ["strategic_initiatives", "optimal_timing", "runway_management"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be updated in real-time as actuals come in, not just at month-end. Real-time budget tracking provides immediate visibility into variances.",
+    "category": "budgeting",
+    "tags": ["real_time_tracking", "budget_updates", "variance_visibility"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue growth is slowing but expenses continue to grow, this creates a 'growth trap'. Revenue growth must outpace expense growth for sustainable business.",
+    "category": "expenses",
+    "tags": ["growth_trap", "revenue_expense_growth", "sustainability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is negative and declining, this is a critical situation. Take immediate action: payment deferrals, emergency financing, or drastic cost cuts.",
+    "category": "cash_flow",
+    "tags": ["critical_situation", "negative_balance", "emergency_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'savings' or 'reserve' line item. Building reserves during good times provides buffer during difficult times.",
+    "category": "budgeting",
+    "tags": ["savings", "reserves", "buffer_building"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer churn rate exceeds 15% monthly, the business model may be unsustainable. Focus on product-market fit and customer satisfaction before attempting to grow.",
+    "category": "revenue",
+    "tags": ["customer_churn", "business_model", "product_market_fit"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses are growing faster than revenue for 5+ consecutive months, this is unsustainable. Take immediate action to reverse the trend or secure additional funding.",
+    "category": "expenses",
+    "tags": ["unsustainable_trend", "expense_growth", "funding"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer acquisition costs, focus on improving conversion rates rather than increasing marketing spend. Better conversion reduces CAC without increasing spend.",
+    "category": "revenue",
+    "tags": ["customer_acquisition_cost", "conversion_rates", "marketing_efficiency"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is positive but runway is shortening due to increasing expenses, this is a warning sign. Address expense growth before it becomes critical.",
+    "category": "cash_flow",
+    "tags": ["runway_shortening", "expense_growth", "warning_signs"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be communicated to all stakeholders, not just finance team. Transparent budgeting improves accountability and helps everyone understand financial constraints.",
+    "category": "budgeting",
+    "tags": ["budget_communication", "transparency", "accountability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue per employee is below industry average, this may indicate inefficiency or pricing issues. Review operations and pricing strategy to improve efficiency.",
+    "category": "revenue",
+    "tags": ["revenue_per_employee", "efficiency", "pricing_strategy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is high (>18 months runway) but business is not growing, this may indicate missed opportunities. Consider investing in growth initiatives or returning capital to investors.",
+    "category": "cash_flow",
+    "tags": ["high_cash_balance", "missed_opportunities", "growth_investment"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'flexibility' line item for unexpected opportunities. Having budget flexibility allows you to capitalize on opportunities without breaking the budget.",
+    "category": "budgeting",
+    "tags": ["budget_flexibility", "unexpected_opportunities", "capitalization"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If gross margin is below 20% for service businesses, profitability becomes difficult. Review pricing strategy, cost structure, or consider pivoting to higher-margin services.",
+    "category": "revenue",
+    "tags": ["gross_margin", "profitability", "pricing_strategy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show high volatility but revenue is stable, this indicates poor cost control. Implement spending approval processes and budget controls to reduce volatility.",
+    "category": "expenses",
+    "tags": ["expense_volatility", "cost_control", "spending_approval"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer lifetime value, focus on customer success and retention. High LTV customers are worth investing in to ensure long-term retention.",
+    "category": "revenue",
+    "tags": ["customer_lifetime_value", "customer_success", "retention"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is extending (increasing month-over-month), this indicates positive cash flow trends. Use this time to invest in growth or build larger reserves for future challenges.",
+    "category": "runway",
+    "tags": ["runway_extension", "positive_trends", "growth_investment"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be reviewed quarterly for strategic adjustments, not just monthly for tactical corrections. Quarterly reviews allow for larger strategic shifts.",
+    "category": "budgeting",
+    "tags": ["quarterly_review", "strategic_adjustments", "tactical_corrections"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue growth rate is below 5% annually for established businesses, this may indicate market maturity or competitive pressure. Review market position and consider diversification.",
+    "category": "revenue",
+    "tags": ["revenue_growth", "market_maturity", "diversification"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is negative but cash balance is positive, this is a temporary situation. Negative cash flow will eventually deplete positive balance - take action before it's too late.",
+    "category": "cash_flow",
+    "tags": ["temporary_situation", "negative_cash_flow", "early_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'learning' line item for experimentation and testing. Allocating budget for learning allows you to test new initiatives without breaking the main budget.",
+    "category": "budgeting",
+    "tags": ["learning_budget", "experimentation", "testing"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer acquisition cost (CAC) is increasing while customer lifetime value (LTV) is decreasing, this creates a dangerous trend. Either reduce CAC or increase LTV immediately.",
+    "category": "revenue",
+    "tags": ["cac_ltv_trend", "dangerous_trend", "immediate_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses are consistently over budget across all categories, this indicates systemic budgeting problems. Review budget methodology, not just individual categories.",
+    "category": "budgeting",
+    "tags": ["systemic_budgeting", "budget_methodology", "category_review"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer concentration risk (>70% from top 3 clients), maintain 18+ months runway and actively work on customer diversification.",
+    "category": "risk",
+    "tags": ["customer_concentration", "runway_requirements", "diversification"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If operating margin is declining month-over-month, this indicates pricing pressure or cost inflation. Review pricing strategy and supplier contracts to reverse the trend.",
+    "category": "revenue",
+    "tags": ["operating_margin_decline", "pricing_pressure", "cost_inflation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is positive but declining rapidly (>20% month-over-month), this is a red flag. Identify the cause immediately and take corrective action.",
+    "category": "cash_flow",
+    "tags": ["rapid_decline", "red_flag", "corrective_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be 'activity-based' (tied to business activities) not just 'line-item' based. Activity-based budgeting provides better visibility into cost drivers.",
+    "category": "budgeting",
+    "tags": ["activity_based_budgeting", "cost_drivers", "visibility"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue per customer is increasing but total revenue is flat, this may indicate customer base contraction. Focus on customer acquisition to grow total revenue.",
+    "category": "revenue",
+    "tags": ["revenue_per_customer", "customer_base_contraction", "acquisition"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show declining trend for 3+ consecutive months, this may indicate underinvestment or cost-cutting that's impacting growth. Balance cost reduction with growth investment.",
+    "category": "expenses",
+    "tags": ["declining_expenses", "underinvestment", "growth_balance"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high inventory levels, maintain larger cash reserves. High inventory ties up cash and reduces available runway.",
+    "category": "cash_flow",
+    "tags": ["high_inventory", "cash_reserves", "runway"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'innovation' line item for new initiatives. Allocating budget for innovation allows you to test new ideas without impacting core operations.",
+    "category": "budgeting",
+    "tags": ["innovation_budget", "new_initiatives", "core_operations"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer retention rate is improving but revenue is flat, this may indicate customer downgrades or pricing pressure. Review pricing strategy and product mix.",
+    "category": "revenue",
+    "tags": ["customer_retention", "revenue_flat", "pricing_strategy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is positive but runway is shortening due to revenue decline, this is a warning sign. Address revenue decline before it becomes critical.",
+    "category": "cash_flow",
+    "tags": ["runway_shortening", "revenue_decline", "warning_signs"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be compared to industry benchmarks, not just historical performance. Industry benchmarks provide context for whether your expenses are reasonable.",
+    "category": "budgeting",
+    "tags": ["industry_benchmarks", "historical_performance", "expense_reasonableness"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue concentration in single month exceeds 50% of annual revenue, this creates extreme timing risk. Negotiate payment schedules or secure financing to smooth cash flow.",
+    "category": "risk",
+    "tags": ["revenue_concentration", "timing_risk", "cash_flow_smoothing"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses are consistently under budget, this may indicate conservative budgeting or missed growth opportunities. Review budget assumptions and consider more aggressive growth plans.",
+    "category": "budgeting",
+    "tags": ["conservative_budgeting", "missed_opportunities", "growth_plans"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer acquisition costs, focus on improving marketing efficiency rather than increasing spend. Better efficiency reduces CAC without increasing budget.",
+    "category": "revenue",
+    "tags": ["customer_acquisition_cost", "marketing_efficiency", "budget_optimization"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is high but business is losing money (negative net income), this is unsustainable. High cash balance can mask underlying profitability problems.",
+    "category": "cash_flow",
+    "tags": ["high_cash_balance", "negative_net_income", "profitability_problems"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'debt service' line item if applicable. Debt service impacts cash flow but may not be included in operating expenses, so it needs separate tracking.",
+    "category": "budgeting",
+    "tags": ["debt_service", "cash_flow_tracking", "operating_expenses"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue growth rate is negative for 3+ consecutive months, this indicates a fundamental business problem. Don't wait for it to self-correct - take immediate action to reverse the trend.",
+    "category": "revenue",
+    "tags": ["revenue_decline", "business_problem", "trend_reversal"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show high correlation with revenue growth, this is healthy. Expenses should scale with revenue, not grow independently of revenue.",
+    "category": "expenses",
+    "tags": ["expense_revenue_correlation", "scaling", "healthy_growth"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer lifetime value, focus on customer success and retention programs. High LTV customers are worth investing in to ensure long-term retention and expansion.",
+    "category": "revenue",
+    "tags": ["customer_lifetime_value", "customer_success", "retention_programs"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When runway is between 18-24 months, this is the optimal time for major strategic initiatives: market expansion, product development, or team scaling. Use this time for growth.",
+    "category": "runway",
+    "tags": ["strategic_initiatives", "optimal_timing", "growth_investment"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be 'rolling' (updated monthly with new month added), not 'static' (fixed for the year). Rolling budgets provide better accuracy and relevance.",
+    "category": "budgeting",
+    "tags": ["rolling_budget", "static_budget", "accuracy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer acquisition cost (CAC) payback period is increasing, this indicates declining marketing efficiency. Review marketing channels and conversion rates to improve efficiency.",
+    "category": "revenue",
+    "tags": ["cac_payback", "marketing_efficiency", "conversion_rates"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is volatile (month-to-month variance >50%), maintain 12+ months runway. Volatile cash flow requires larger buffers to prevent cash crunches.",
+    "category": "cash_flow",
+    "tags": ["cash_flow_volatility", "runway_requirements", "buffers"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'tax' line item for estimated tax payments. Tax payments impact cash flow but may not be included in operating expenses, so they need separate tracking.",
+    "category": "budgeting",
+    "tags": ["tax_payments", "cash_flow_tracking", "operating_expenses"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue per employee is declining while headcount is increasing, this indicates declining productivity. Review operations and consider productivity improvements or headcount reduction.",
+    "category": "revenue",
+    "tags": ["revenue_per_employee", "productivity", "headcount"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is positive but cash flow forecast shows negative balance within 6 months, take immediate action. 6 months is the minimum time needed to implement most corrective measures.",
+    "category": "cash_flow",
+    "tags": ["cash_flow_forecast", "negative_balance", "corrective_measures"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be 'flexible' (can adjust for changes) not 'rigid' (fixed regardless of circumstances). Flexible budgets adapt to business changes and provide better decision-making.",
+    "category": "budgeting",
+    "tags": ["flexible_budget", "rigid_budget", "adaptability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If gross margin is declining while revenue is growing, this may indicate pricing pressure or cost inflation. Review pricing strategy and supplier contracts to maintain margins.",
+    "category": "revenue",
+    "tags": ["gross_margin_decline", "pricing_pressure", "cost_inflation"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses are growing faster than revenue for 6+ consecutive months, this is unsustainable. Take immediate action to reverse the trend or secure additional funding.",
+    "category": "expenses",
+    "tags": ["unsustainable_trend", "expense_growth", "funding"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer churn (>20% monthly), runway calculations become highly unreliable. Focus on reducing churn before attempting to grow revenue through acquisition.",
+    "category": "revenue",
+    "tags": ["customer_churn", "runway_reliability", "retention"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is high (>24 months runway) but business is not growing, this may indicate missed opportunities or lack of strategic direction. Consider investing in growth or returning capital.",
+    "category": "cash_flow",
+    "tags": ["high_cash_balance", "missed_opportunities", "strategic_direction"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be reviewed by board or advisors for independent perspective. External review catches errors and provides strategic insights that internal review may miss.",
+    "category": "budgeting",
+    "tags": ["board_review", "independent_perspective", "strategic_insights"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If revenue concentration in top 5 customers exceeds 80%, this creates extreme dependency risk. Diversify customer base immediately to reduce risk and improve business stability.",
+    "category": "risk",
+    "tags": ["revenue_concentration", "dependency_risk", "business_stability"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash flow is positive but runway is shortening due to both increasing expenses and decreasing revenue, this is a critical situation. Take immediate action on both fronts.",
+    "category": "cash_flow",
+    "tags": ["critical_situation", "expense_revenue_trends", "immediate_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should include 'contingency' for unexpected events (5-10% of total). Contingency provides buffer for unexpected expenses and maintains forecast accuracy during uncertainty.",
+    "category": "budgeting",
+    "tags": ["contingency", "unexpected_events", "forecast_accuracy"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "If customer lifetime value (LTV) to customer acquisition cost (CAC) ratio is below 2:1, the business model is likely unsustainable. Improve LTV or reduce CAC to achieve sustainable unit economics.",
+    "category": "revenue",
+    "tags": ["ltv_cac_ratio", "business_model", "unit_economics"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When expenses show sudden increases (>40% month-over-month) in specific categories, investigate immediately. Sudden increases may indicate errors, fraud, or unplanned costs that need attention.",
+    "category": "expenses",
+    "tags": ["expense_increases", "investigation", "fraud_detection"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "For businesses with high customer acquisition costs, focus on improving conversion rates and reducing sales cycle length. Better conversion and shorter cycles reduce CAC without increasing spend.",
+    "category": "revenue",
+    "tags": ["customer_acquisition_cost", "conversion_rates", "sales_cycle"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "When cash balance is negative and declining rapidly, this is a critical emergency. Take immediate action: payment deferrals, emergency financing, drastic cost cuts, or business sale consideration.",
+    "category": "cash_flow",
+    "tags": ["critical_emergency", "negative_balance", "emergency_action"],
+    "source": "Financial best practices"
+  },
+  {
+    "content": "Budget should be 'dynamic' (adjusts based on actual performance) not 'static' (fixed regardless of performance). Dynamic budgets provide better accuracy and relevance as business conditions change.",
+    "category": "budgeting",
+    "tags": ["dynamic_budget", "static_budget", "performance_adjustment"],
+    "source": "Financial best practices"
+  }
+]

@@ -269,7 +269,7 @@ create trigger trg_forecasts_updated_at
 -- Migration 7: Waitlist
 -- ============================================
 -- Waitlist table to collect emails for early access
-create table if not exists public."Waitlist" (
+create table if not exists public.waitlist (
   id uuid primary key default gen_random_uuid(),
   email text not null,
   source text,
@@ -277,20 +277,24 @@ create table if not exists public."Waitlist" (
 );
 
 -- Unique by lower(email) to avoid duplicates with case differences
-create unique index if not exists waitlist_email_unique on public."Waitlist" (lower(email));
+create unique index if not exists waitlist_email_unique on public.waitlist (lower(email));
 
-alter table public."Waitlist" enable row level security;
+alter table public.waitlist enable row level security;
 
 -- Allow inserts from anyone (anon or authenticated)
 do $$
 begin
   if not exists (
-    select 1 from pg_policies where schemaname='public' and tablename='Waitlist' and policyname='waitlist_insert_all'
+    select 1 from pg_policies where schemaname='public' and tablename='waitlist' and policyname='waitlist_insert_all'
   ) then
-    create policy waitlist_insert_all on public."Waitlist"
-      for insert to public, anon, authenticated with check (true);
+    create policy waitlist_insert_all on public.waitlist
+      for insert to anon, authenticated with check (true);
   end if;
 end $$;
+
+-- Grant necessary permissions
+grant insert on public.waitlist to anon;
+grant insert on public.waitlist to authenticated;
 
 -- Migration 8: Organizations
 -- ============================================

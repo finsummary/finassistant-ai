@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, successResponse } from '../../../_utils'
 import { getCachedAnalysis, setCachedAnalysis } from '@/lib/ai-cache'
+import { searchFinancialKnowledge, searchUserKnowledge, saveUserKnowledge } from '@/lib/knowledge-search'
 
 export const dynamic = 'force-dynamic'
 
@@ -347,8 +348,41 @@ export async function POST(req: Request) {
         })),
     }
 
+    // Search for relevant knowledge from vector database
+    let financialKnowledge: string[] = []
+    let userKnowledge: string[] = []
+    
+    try {
+      // Build query for financial knowledge search
+      const knowledgeQuery = `Business has ${currentBalance} cash, ${cashRunway !== null ? cashRunway : 'unknown'} months runway. ` +
+        `Current month: ${monthIncome} income, ${monthExpenses} expenses. ` +
+        `Main risks: ${exposureData.risks?.slice(0, 3).map((r: any) => r.title).join(', ') || 'none'}. ` +
+        `What should be done?`
+      
+      const financialResults = await searchFinancialKnowledge(knowledgeQuery, undefined, 5, 0.7)
+      financialKnowledge = financialResults.map(k => k.content)
+      
+      // Search for user-specific knowledge
+      const userQuery = `User's business context and preferences for financial decisions. ` +
+        `Current situation: ${currentBalance} cash, ${cashRunway !== null ? cashRunway : 'unknown'} months runway.`
+      
+      const userResults = await searchUserKnowledge(userId, userQuery, undefined, 3, 0.7)
+      userKnowledge = userResults.map(k => k.content)
+    } catch (error: any) {
+      // Log but don't fail - knowledge search is optional
+      console.warn('[Choice Analyze] Knowledge search failed:', error.message)
+    }
+
     // Build prompt for LLM
     const systemPrompt = `You are a financial advisor helping a business owner make strategic decisions about their cash flow.
+
+${financialKnowledge.length > 0 ? `RELEVANT FINANCIAL KNOWLEDGE:
+${financialKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}${userKnowledge.length > 0 ? `USER-SPECIFIC CONTEXT:
+${userKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}FOCUS: Answer ONLY "What should I do next?" - force intelligent action, nothing else.
 
 FOCUS: Answer ONLY "What should I do next?" - force intelligent action, nothing else.
 
@@ -465,6 +499,26 @@ Based on this financial situation, what specific decisions should the business o
     
     // Cache the result (both AI and rule-based)
     setCachedAnalysis(userId, 'choice', result)
+    
+    // Save user knowledge from this analysis (async, don't wait)
+    if (analysis && analysis.summary) {
+      saveUserKnowledge(
+        userId,
+        `In CHOICE analysis: User had ${currentBalance} cash, ${cashRunway !== null ? cashRunway : 'unknown'} months runway. ` +
+        `AI recommended: ${analysis.summary}. ` +
+        `Decisions: ${analysis.decisions?.map((d: any) => d.description).join('; ') || 'none'}.`,
+        'decision_history',
+        {
+          framework_section: 'choice',
+          timestamp: new Date().toISOString(),
+          cash_balance: currentBalance,
+          runway: cashRunway,
+          recommendations: analysis.decisions,
+        }
+      ).catch((err) => {
+        console.warn('[Choice Analyze] Failed to save user knowledge:', err.message)
+      })
+    }
     
     return successResponse({
       ...result,

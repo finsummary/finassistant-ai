@@ -372,9 +372,22 @@ export default function Dashboard({ user }: { user?: any }) {
                         {linkedAccounts.length > 0 ? (
                             <ul>
                                 {linkedAccounts.map((acc: any) => {
-                                    const accTx = filteredBySearch(filteredByPeriod(transactions.filter(t => t.account_id === acc.id)))
+                                    const allAccTx = transactions.filter(t => t.account_id === acc.id)
+                                    const accTx = filteredBySearch(filteredByPeriod(allAccTx))
                                     const isOpen = !!expanded[acc.id]
                                     const totals = computeTotals(accTx)
+                                    // Find last transaction date from ALL transactions (not filtered)
+                                    const lastTransactionDate = allAccTx.length > 0 
+                                        ? allAccTx.reduce((latest, tx) => {
+                                            const txDate = new Date(tx.booked_at)
+                                            const latestDate = new Date(latest)
+                                            return txDate > latestDate ? tx.booked_at : latest
+                                          }, allAccTx[0].booked_at)
+                                        : null
+                                    const formatDate = (dateStr: string) => {
+                                        const date = new Date(dateStr)
+                                        return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                                    }
                                     return (
                                         <li key={acc.id} className="border-b py-2">
                                             <button className="w-full text-left hover:bg-muted/50 rounded-lg p-2 transition-colors" onClick={() => toggleExpanded(acc.id)}>
@@ -386,6 +399,9 @@ export default function Dashboard({ user }: { user?: any }) {
                                                     </div>
                                                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                                         <span>{accTx.length} transaction{accTx.length !== 1 ? 's' : ''}</span>
+                                                        {lastTransactionDate && (
+                                                            <span className="text-xs">• Last: {formatDate(lastTransactionDate)}</span>
+                                                        )}
                                                         {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                                                     </div>
                                                 </div>

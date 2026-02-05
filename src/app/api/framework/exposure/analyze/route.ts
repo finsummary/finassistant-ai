@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, successResponse } from '../../../_utils'
 import { getCachedAnalysis, setCachedAnalysis } from '@/lib/ai-cache'
+import { searchFinancialKnowledge, searchUserKnowledge, saveUserKnowledge } from '@/lib/knowledge-search'
 
 export const dynamic = 'force-dynamic'
 
@@ -455,11 +456,40 @@ export async function POST(req: Request) {
       } : null,
     }
 
+    // Search for relevant knowledge from vector database
+    let financialKnowledge: string[] = []
+    let userKnowledge: string[] = []
+    
+    try {
+      // Build query for financial knowledge search
+      const knowledgeQuery = `Business has ${currentBalance} cash, ${cashRunway !== null ? cashRunway : 'unknown'} months runway. ` +
+        `Fixed costs: ${totalFixedCosts}, variable costs: ${totalVariableCosts}. ` +
+        `Scenarios: ${scenarios.length} analyzed. ` +
+        `What could break? What are the risks?`
+      
+      const financialResults = await searchFinancialKnowledge(knowledgeQuery, undefined, 5, 0.7)
+      financialKnowledge = financialResults.map(k => k.content)
+      
+      // Search for user-specific knowledge
+      const userQuery = `User's financial risks: ${currentBalance} cash, ${cashRunway !== null ? cashRunway : 'unknown'} months runway, ${scenarios.length} risk scenarios.`
+      
+      const userResults = await searchUserKnowledge(userId, userQuery, undefined, 3, 0.7)
+      userKnowledge = userResults.map(k => k.content)
+    } catch (error: any) {
+      // Log but don't fail - knowledge search is optional
+      console.warn('[Exposure Analyze] Knowledge search failed:', error.message)
+    }
 
     // Build prompt for LLM
     const systemPrompt = `You are a financial risk analyst. Analyze the provided financial data and identify potential risks.
 
-FOCUS: Answer ONLY "What could break?" - identify risks and what could go wrong, nothing else.
+${financialKnowledge.length > 0 ? `RELEVANT FINANCIAL KNOWLEDGE:
+${financialKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}${userKnowledge.length > 0 ? `USER-SPECIFIC CONTEXT:
+${userKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}FOCUS: Answer ONLY "What could break?" - identify risks and what could go wrong, nothing else.
 
 CRITICAL: You MUST identify risks even if the financial situation looks healthy. Look for:
 1. **Dependency risks**: Large single payments, client concentration, revenue concentration
@@ -557,6 +587,33 @@ Analyze this financial situation and provide a comprehensive risk assessment.`
     
     // Cache the result (both AI and rule-based)
     setCachedAnalysis(userId, 'exposure', result)
+    
+    // Save user knowledge from this analysis (async, don't wait)
+    if (analysis && analysis.risks && analysis.risks.length > 0) {
+      const topRisks = analysis.risks.slice(0, 3).map((r: any) => r.title).join(', ')
+      saveUserKnowledge(
+        userId,
+        `In EXPOSURE analysis: Business has ${currentBalance} cash, ${cashRunway !== null ? cashRunway : 'unknown'} months runway. ` +
+        `Fixed costs: ${context.fixedCosts.total}, variable costs: ${context.variableCosts.total}. ` +
+        `Scenarios analyzed: ${scenarios.length}. ` +
+        `Top risks identified: ${topRisks}. ` +
+        `Overall risk: ${analysis.overallRisk || 'unknown'}.`,
+        'business_context',
+        {
+          framework_section: 'exposure',
+          timestamp: new Date().toISOString(),
+          cash_balance: currentBalance,
+          runway: cashRunway,
+          fixed_costs: context.fixedCosts.total,
+          variable_costs: context.variableCosts.total,
+          scenarios_count: scenarios.length,
+          overall_risk: analysis.overallRisk,
+          top_risks: analysis.risks.slice(0, 3),
+        }
+      ).catch((err) => {
+        console.warn('[Exposure Analyze] Failed to save user knowledge:', err.message)
+      })
+    }
     
     return successResponse({
       ...result,

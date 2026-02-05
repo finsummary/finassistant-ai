@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requireAuth, errorResponse, successResponse } from '../../../_utils'
 import { getCachedAnalysis, setCachedAnalysis } from '@/lib/ai-cache'
+import { searchFinancialKnowledge, searchUserKnowledge, saveUserKnowledge } from '@/lib/knowledge-search'
 
 export const dynamic = 'force-dynamic'
 
@@ -573,9 +574,40 @@ export async function POST(req: Request) {
       forecastExpenses: rollingForecastData?.forecastExpenses || 0,
     }
 
+    // Search for relevant knowledge from vector database
+    let financialKnowledge: string[] = []
+    let userKnowledge: string[] = []
+    
+    try {
+      // Build query for financial knowledge search
+      const knowledgeQuery = `Business has ${currentBalance} cash, ${runway !== null ? runway : 'unknown'} months runway. ` +
+        `Time to zero cash: ${timeToZeroCash !== null ? timeToZeroCash : 'unknown'} months. ` +
+        `Runway direction: ${runwayDirection}. ` +
+        `Structural leaks: ${structuralLeaks.length} identified. ` +
+        `Where is the business heading financially?`
+      
+      const financialResults = await searchFinancialKnowledge(knowledgeQuery, undefined, 5, 0.7)
+      financialKnowledge = financialResults.map(k => k.content)
+      
+      // Search for user-specific knowledge
+      const userQuery = `User's financial trajectory: ${currentBalance} cash, ${runway !== null ? runway : 'unknown'} months runway, ${timeToZeroCash !== null ? timeToZeroCash : 'unknown'} months to zero cash.`
+      
+      const userResults = await searchUserKnowledge(userId, userQuery, undefined, 3, 0.7)
+      userKnowledge = userResults.map(k => k.content)
+    } catch (error: any) {
+      // Log but don't fail - knowledge search is optional
+      console.warn('[Trajectory Analyze] Knowledge search failed:', error.message)
+    }
+
     const systemPrompt = `You are a financial advisor analyzing a business's cash flow TRAJECTORY and forecast.
 
-FOCUS: Answer ONLY "Where am I heading?" - show financial inertia, nothing else.
+${financialKnowledge.length > 0 ? `RELEVANT FINANCIAL KNOWLEDGE:
+${financialKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}${userKnowledge.length > 0 ? `USER-SPECIFIC CONTEXT:
+${userKnowledge.map((k, i) => `${i + 1}. ${k}`).join('\n')}
+
+` : ''}FOCUS: Answer ONLY "Where am I heading?" - show financial inertia, nothing else.
 
 TRAJECTORY Purpose: Show financial inertia. Trajectory answers: "If we keep behaving like this, where do we end up?"
 
@@ -687,6 +719,30 @@ Analyze this trajectory and provide insights.`
     
     // Cache the result (both AI and rule-based)
     setCachedAnalysis(userId, 'trajectory', result)
+    
+    // Save user knowledge from this analysis (async, don't wait)
+    if (analysis && analysis.summary) {
+      saveUserKnowledge(
+        userId,
+        `In TRAJECTORY analysis: Business has ${currentBalance} cash, ${runway !== null ? runway : 'unknown'} months runway. ` +
+        `Time to zero cash: ${timeToZeroCash !== null ? timeToZeroCash : 'unknown'} months. ` +
+        `Runway direction: ${runwayDirection}. ` +
+        `Structural leaks: ${structuralLeaks.length} identified. ` +
+        `AI summary: ${analysis.summary}.`,
+        'business_context',
+        {
+          framework_section: 'trajectory',
+          timestamp: new Date().toISOString(),
+          cash_balance: currentBalance,
+          runway: runway,
+          time_to_zero_cash: timeToZeroCash,
+          runway_direction: runwayDirection,
+          structural_leaks: structuralLeaks,
+        }
+      ).catch((err) => {
+        console.warn('[Trajectory Analyze] Failed to save user knowledge:', err.message)
+      })
+    }
     
     return successResponse({
       ...result,
