@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { createClient } from '@/lib/supabase/client'
 import { 
   CheckCircle2, 
   Loader2, 
@@ -30,21 +31,43 @@ export default function WaitlistPage() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('/api/waitlist', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: email.trim(),
+      // Validate email
+      if (!email || typeof email !== 'string') {
+        throw new Error('Email is required')
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(email.trim())) {
+        throw new Error('Invalid email format')
+      }
+
+      // Normalize email
+      const normalizedEmail = email.trim().toLowerCase()
+
+      // Use client-side Supabase (works with GitHub Pages)
+      const supabase = createClient()
+      
+      const { data, error: supabaseError } = await supabase
+        .from('waitlist')
+        .insert({
+          email: normalizedEmail,
           source: 'landing_page',
-        }),
-      })
+        })
+        .select()
+        .single()
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to join waitlist')
+      if (supabaseError) {
+        // Handle duplicate email
+        if (supabaseError.code === '23505' || supabaseError.message.includes('duplicate') || supabaseError.message.includes('unique')) {
+          throw new Error('This email is already registered')
+        }
+        
+        // Handle RLS/permission errors
+        if (supabaseError.message.includes('policy') || supabaseError.message.includes('permission') || supabaseError.message.includes('RLS')) {
+          throw new Error('Permission denied. Please check database policies.')
+        }
+        
+        throw new Error(supabaseError.message || 'Failed to add email to waitlist')
       }
 
       setIsSuccess(true)
