@@ -31,10 +31,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Temporarily rename API folder
+      - name: Temporarily move API folder outside app directory
         run: |
           if [ -d "src/app/api" ]; then
-            mv src/app/api src/app/api.disabled
+            mv src/app/api ./api-backup
           fi
       
       - name: Build
@@ -45,8 +45,8 @@ jobs:
       
       - name: Restore API folder
         run: |
-          if [ -d "src/app/api.disabled" ]; then
-            mv src/app/api.disabled src/app/api
+          if [ -d "./api-backup" ]; then
+            mv ./api-backup src/app/api
           fi
       
       - name: Setup Pages
