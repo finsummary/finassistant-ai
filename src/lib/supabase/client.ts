@@ -8,11 +8,11 @@ export function createClient() {
     const errorMsg = `Missing Supabase environment variables!
     
 Please check:
-1. .env.local file exists in finassistant-ai/ directory
-2. File contains:
-   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-3. Server was restarted after creating .env.local
+1. GitHub Secrets are set correctly:
+   - NEXT_PUBLIC_SUPABASE_URL
+   - NEXT_PUBLIC_SUPABASE_ANON_KEY
+2. Deployment was restarted after updating Secrets
+3. Variables are available at build time
 
 Current values:
 - URL: ${supabaseUrl ? '✓ Set' : '✗ Missing'}
@@ -26,6 +26,12 @@ Current values:
   if (!supabaseUrl.startsWith('https://') || !supabaseUrl.includes('.supabase.co')) {
     console.warn('⚠️ Supabase URL format looks incorrect:', supabaseUrl)
   }
+
+  // Log for debugging (only first few chars of key for security)
+  console.log('Supabase client initialized:', {
+    url: supabaseUrl,
+    keyPrefix: supabaseAnonKey.substring(0, 20) + '...',
+  })
 
   return createBrowserClient(supabaseUrl, supabaseAnonKey)
 }

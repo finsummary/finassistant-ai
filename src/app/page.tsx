@@ -57,13 +57,21 @@ export default function Home() {
         .single()
 
       if (supabaseError) {
+        // Log full error for debugging
+        console.error('Supabase error:', {
+          code: supabaseError.code,
+          message: supabaseError.message,
+          details: supabaseError.details,
+          hint: supabaseError.hint,
+        })
+        
         // Handle duplicate email
         if (supabaseError.code === '23505' || supabaseError.message.includes('duplicate') || supabaseError.message.includes('unique')) {
           throw new Error('This email is already registered')
         }
         
         // Handle RLS/permission errors
-        if (supabaseError.message.includes('policy') || supabaseError.message.includes('permission') || supabaseError.message.includes('RLS')) {
+        if (supabaseError.code === '42501' || supabaseError.message.includes('policy') || supabaseError.message.includes('permission') || supabaseError.message.includes('RLS') || supabaseError.message.includes('row-level security')) {
           throw new Error('Permission denied. Please check database policies.')
         }
         
